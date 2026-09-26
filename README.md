@@ -7,11 +7,13 @@ declared. This package is that client for the three Node services
 (fleet-service, automation-service, st-gateway).
 
 Its behaviour is not described here but *fixed* by
-[`fixtures/introspection.json`][fixture] in `meta` — thirty-seven conditions for
-a calling service and eleven for st-gateway's queue lane, each with the center's
+[`fixtures/introspection.json`][fixture] in `meta` — forty conditions for a
+calling service and twelve for st-gateway's queue lane, each with the center's
 response and the exact status, message, identity and call count expected. It is
-vendored into `test/fixtures/`, and the conformance suite drives all forty-eight
-cases against a real local HTTP stub.
+vendored into `test/fixtures/` (version 4), and the conformance suite drives all
+fifty-two cases against a real local HTTP stub. The four version-4 cases carry
+two `Authorization` lines, which no header value can express, so they are sent
+as real separate lines through real Express and through the lane recipe below.
 
 Zero runtime dependencies and **no peer dependencies at all** — not even
 Express, whose types are declared locally, so a consumer with

@@ -1,18 +1,24 @@
 introspection.json is vendored verbatim. It is not maintained here.
 
   original    V-M-Pioneer-Trading/meta, path fixtures/introspection.json
-  meta commit 9b6274657743ec6f626f7d56e4a01069de7d43e0
-  blob        095716953b29e5cd3ce9662d77347490f8d062ee
-  vendored    2026-09-25
-  version     3
-  cases       37 calling-service + 11 gateway = 48
-  bytes       49347
-  sha256      77f845c89d4baabef7a336325a9e30360d908fd761ad450904c693621547dfa3
+  meta commit 46c033e3101dad46c0336e7d3cd74642a62248ab
+  blob        a6bc10071ed9704f66cd635da4b413b0a74d4978
+  vendored    2026-09-26
+  version     4
+  cases       40 calling-service + 12 gateway = 52
+  bytes       53749
+  sha256      5fe6d77e1113c05af899e554db0723a06cf42c197f9eb46a8b93b2f3c682201c
 
 The commit above is a commit on meta's **main**: the squash of
-V-M-Pioneer-Trading/meta#88 ("fixture v3: an active answer may omit scope,
-and means no scopes"). Version 3 adds three cases whose center answer has no
-`scope` key; 1.1.1 is the first release that passes them.
+V-M-Pioneer-Trading/meta#91 ("Two Authorization lines are never a
+credential: say why, and pin it (fixture v4)"). Version 4 lets
+`request.authorization` be an array of two or more header lines and adds
+three calling-service cases and one gateway case in which two lines are no
+credential and the center is not called; 1.1.2 is the first release that
+passes them. The conformance suite sends an array case as real, separate
+header lines through real Express (and, for the gateway case, through a Node
+server applying `authorizationLines`), and an authorization of any other
+shape fails the case.
 
 The sha256 is over the LF bytes of the blob as git stores it, which is what
 `git show <commit>:fixtures/introspection.json` prints. test/conformance.test.ts

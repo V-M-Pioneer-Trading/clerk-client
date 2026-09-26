@@ -3,8 +3,9 @@
  *
  * Three entry points, deliberately separate:
  *
- * - {@link createAuthorizer} — the framework-agnostic policy, the thirty-seven
- *   calling-service cases of `meta/fixtures/introspection.json`.
+ * - {@link createAuthorizer} — the framework-agnostic policy, the forty
+ *   calling-service cases of `meta/fixtures/introspection.json`, given a
+ *   caller that applies {@link authorizationLines}.
  * - {@link createExpressAuth} — the Express 4 adapter over it, whose
  *   declarations live at route registration so Express's own matcher binds
  *   them, and whose {@link secured} wrapper refuses **at startup** to register

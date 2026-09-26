@@ -1,14 +1,31 @@
 /**
- * @file All forty-eight conditions of meta's introspection fixture.
+ * @file All fifty-two conditions of meta's introspection fixture.
  *
  * Driven against a real local HTTP stub, one per case, so that what the client
  * sends is asserted on the wire and not against a mock of itself. Nothing here
  * is hand-written policy: every status, message, identity and call count comes
  * out of the vendored file, and an assertion key this suite does not recognise
  * fails the case rather than being skipped.
+ *
+ * A case whose `request.authorization` is an ARRAY (version 4) is several
+ * `Authorization` lines, and a value cannot carry that: Node keeps the first
+ * line and drops the rest before anything reads it. Those cases are therefore
+ * sent over HTTP as real, separate header lines — through real Express and
+ * `createExpressAuth` for the calling-service cases, and through a Node server
+ * applying `authorizationLines` in front of `createLaneDeriver` for the
+ * gateway case, which is the recipe the README gives st-gateway. The receiving
+ * server records the lines it saw, so a sender that folded them into one would
+ * fail the case rather than pass it by accident. An authorization of any other
+ * shape fails the case.
  */
 
-import { createAuthorizer } from "../src/core";
+import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
+import express from "express";
+
+import { authorizationLines, createAuthorizer } from "../src/core";
+import { createExpressAuth, identityOf } from "../src/express";
 import { createLaneDeriver } from "../src/gateway";
 import {
   DEFAULT_TIMEOUT_MS,
@@ -17,9 +34,10 @@ import {
   MESSAGES,
   SECRET_HEADER,
 } from "../src/messages";
-import type { Decision } from "../src/types";
+import type { Decision, Identity } from "../src/types";
 import {
   assertKnownExpectKeys,
+  authorizationShape,
   countFetches,
   fixtureSha256,
   fixtureBytes,
@@ -51,7 +69,7 @@ describe("the vendored fixture", () => {
     // Belt and braces: if both the copy and SOURCE were edited together, this
     // literal still pins the bytes the implementation was reviewed against.
     expect(fixtureSha256()).toBe(
-      "77f845c89d4baabef7a336325a9e30360d908fd761ad450904c693621547dfa3"
+      "5fe6d77e1113c05af899e554db0723a06cf42c197f9eb46a8b93b2f3c682201c"
     );
   });
 
@@ -93,9 +111,12 @@ describe("the vendored fixture", () => {
       "session-route-with-scopeless-token",
       "session-route-with-token-lacking-scope-key",
       "token-on-public-get-while-center-is-down",
+      "two-authorization-lines",
+      "two-authorization-lines-on-public-get",
+      "two-authorization-lines-second-empty",
       "visitor-on-public-get",
     ]);
-    expect(fixture.cases).toHaveLength(37);
+    expect(fixture.cases).toHaveLength(40);
   });
 
   it("holds exactly the gateway cases this suite implements", () => {
@@ -111,16 +132,33 @@ describe("the vendored fixture", () => {
       "gateway-kind-operator-with-machine-subject",
       "gateway-no-header",
       "gateway-non-bearer-scheme",
+      "gateway-two-authorization-lines",
     ]);
-    expect(fixture.gatewayCases).toHaveLength(11);
+    expect(fixture.gatewayCases).toHaveLength(12);
   });
 
-  it("is fixture version 3, the one where an active answer may omit scope", () => {
+  it("is fixture version 4, the one where two Authorization lines are no credential", () => {
     // Version 1 declared default-deny on every non-GET method; version 2
-    // exempted the safe methods; version 3 added answers with no `scope` key.
+    // exempted the safe methods; version 3 added answers with no `scope` key;
+    // version 4 added requests carrying more than one `Authorization` line.
     // A copy that fell back would silently stop asserting those cases, which
     // is the drift this number exists to make visible.
-    expect(fixture.version).toBe(3);
+    expect(fixture.version).toBe(4);
+  });
+
+  it("gives every case an authorization this suite knows how to send", () => {
+    // Checked up front as well as per case, so a shape added upstream fails
+    // here by name. Anything else is refused rather than sent as no header.
+    for (const testCase of [...fixture.cases, ...fixture.gatewayCases]) {
+      expect(() => authorizationShape(testCase)).not.toThrow();
+    }
+    const base = fixture.cases[0];
+    if (base === undefined) throw new Error("the fixture has no cases");
+    for (const authorization of [["Bearer a"], ["Bearer a", 1], { a: 1 }, 7]) {
+      expect(() => authorizationShape({ ...base, request: { authorization } })).toThrow(
+        /unknown request.authorization shape/
+      );
+    }
   });
 
   it("pins the names the implementation hard-codes", () => {
@@ -203,6 +241,151 @@ const assertCenterTraffic = (
   }
 };
 
+/** The `Authorization` lines a server received, in order, from `rawHeaders`. */
+const authorizationLinesSeen = (req: IncomingMessage): string[] => {
+  const lines: string[] = [];
+  for (let index = 0; index < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index]?.toLowerCase() === "authorization") {
+      lines.push(req.rawHeaders[index + 1] ?? "");
+    }
+  }
+  return lines;
+};
+
+/**
+ * Send one request whose `Authorization` header is `lines`, one header line
+ * each. `http.request` writes an array header value as repeated lines; the
+ * receiving server's record of what arrived is what proves it did.
+ */
+const sendLines = async (
+  port: number,
+  method: string,
+  lines: readonly string[]
+): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const req = httpRequest({
+    host: "127.0.0.1",
+    port,
+    method,
+    path: "/case",
+    headers: { connection: "close" },
+  });
+  // setHeader rather than the options object, whose type pins `authorization`
+  // to a single string; at runtime both write an array as repeated lines.
+  req.setHeader("Authorization", [...lines]);
+  req.end();
+  const [res] = (await once(req, "response")) as [IncomingMessage];
+  const chunks: Buffer[] = [];
+  for await (const chunk of res) chunks.push(chunk as Buffer);
+  const text = Buffer.concat(chunks).toString("utf8");
+  return {
+    status: res.statusCode ?? 0,
+    body: text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : {},
+  };
+};
+
+/**
+ * A calling-service case whose request carries several `Authorization` lines,
+ * run through real Express and the real adapter, and read back as a Decision.
+ */
+const decideOverTheWire = async (
+  testCase: FixtureCase,
+  stubUrl: string,
+  lines: readonly string[]
+): Promise<Decision> => {
+  const method = testCase.route?.method ?? "GET";
+  if (method.toUpperCase() === "HEAD") {
+    throw new Error(`${testCase.name}: a HEAD has no body to read the decision from`);
+  }
+  const requires = testCase.route?.requires ?? "none";
+  const auth = createExpressAuth({ url: stubUrl, secret: SECRET });
+  const declaration =
+    requires === "none"
+      ? auth.allowPublic()
+      : requires === "session"
+        ? auth.requireSession()
+        : auth.requireScope(requires);
+
+  const seen: string[][] = [];
+  const app = express();
+  app.use((req, _res, next) => {
+    seen.push(authorizationLinesSeen(req));
+    next();
+  });
+  app.all("/case", declaration, (_req, res) => {
+    res.status(200).json({ identity: identityOf(res) });
+  });
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const { status, body } = await sendLines(
+      (server.address() as AddressInfo).port,
+      method,
+      lines
+    );
+    // The lines arrived as lines: as many as the case holds, in its order,
+    // empty ones included. A sender that folded them would fail here.
+    expect(seen).toEqual([[...lines]]);
+    if (status === 200) {
+      return { outcome: "proceed", identity: body.identity as Identity | null };
+    }
+    const error = body.error as { message?: string } | undefined;
+    return {
+      outcome: "reject",
+      status: status as 401 | 403 | 500 | 503,
+      message: error?.message ?? `no error envelope on a ${status}`,
+    };
+  } finally {
+    server.closeAllConnections();
+    server.close();
+    await once(server, "close");
+  }
+};
+
+/**
+ * The gateway case with several `Authorization` lines: a Node server applying
+ * the README's recipe in front of `derive`, which is all st-gateway has.
+ */
+const laneOverTheWire = async (
+  stubUrl: string,
+  lines: readonly string[]
+): Promise<string> => {
+  const deriver = createLaneDeriver({ url: stubUrl, secret: SECRET });
+  const seen: string[][] = [];
+  const server = createServer((req, res) => {
+    seen.push(authorizationLinesSeen(req));
+    const header =
+      authorizationLines(req.rawHeaders) > 1 ? null : req.headers.authorization;
+    void deriver.derive(header).then((lane) => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ lane }));
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const { body } = await sendLines(
+      (server.address() as AddressInfo).port,
+      "GET",
+      lines
+    );
+    expect(seen).toEqual([[...lines]]);
+    return body.lane as string;
+  } finally {
+    server.closeAllConnections();
+    server.close();
+    await once(server, "close");
+  }
+};
+
+/** The token a single-value case would send to the center, if any. */
+const tokenOf = (testCase: FixtureCase): string | null => {
+  const shape = authorizationShape(testCase);
+  if (shape.kind === "lines" || shape.value === null) return null;
+  return shape.value.toLowerCase().startsWith("bearer ")
+    ? shape.value.slice("bearer ".length).trim()
+    : null;
+};
+
 describe("calling-service cases", () => {
   for (const testCase of fixture.cases) {
     it(`${testCase.name}: ${testCase.why.split(".")[0]}`, async () => {
@@ -211,13 +394,18 @@ describe("calling-service cases", () => {
         let decision: Decision;
         let elapsedMs: number;
         try {
-          const authorizer = createAuthorizer({ url: stub.url, secret: SECRET });
+          const shape = authorizationShape(testCase);
           const startedAt = Date.now();
-          decision = await authorizer.authorize({
-            method: testCase.route?.method ?? "GET",
-            requires: testCase.route?.requires ?? "none",
-            authorization: testCase.request.authorization,
-          });
+          if (shape.kind === "lines") {
+            decision = await decideOverTheWire(testCase, stub.url, shape.lines);
+          } else {
+            const authorizer = createAuthorizer({ url: stub.url, secret: SECRET });
+            decision = await authorizer.authorize({
+              method: testCase.route?.method ?? "GET",
+              requires: testCase.route?.requires ?? "none",
+              authorization: shape.value,
+            });
+          }
           elapsedMs = Date.now() - startedAt;
         } finally {
           counter.restore();
@@ -250,11 +438,7 @@ describe("calling-service cases", () => {
           expect(elapsedMs).toBeLessThanOrEqual(expected.maxElapsedMs as number);
         }
 
-        const token =
-          testCase.request.authorization?.toLowerCase().startsWith("bearer ") === true
-            ? testCase.request.authorization.slice("bearer ".length).trim()
-            : null;
-        assertCenterTraffic(testCase, stub, counter.calls, token);
+        assertCenterTraffic(testCase, stub, counter.calls, tokenOf(testCase));
       });
     });
   }
@@ -267,8 +451,13 @@ describe("gateway lane cases", () => {
         const counter = countFetches();
         let lane: string;
         try {
-          const deriver = createLaneDeriver({ url: stub.url, secret: SECRET });
-          lane = await deriver.derive(testCase.request.authorization);
+          const shape = authorizationShape(testCase);
+          lane =
+            shape.kind === "lines"
+              ? await laneOverTheWire(stub.url, shape.lines)
+              : await createLaneDeriver({ url: stub.url, secret: SECRET }).derive(
+                  shape.value
+                );
         } finally {
           counter.restore();
         }
@@ -279,11 +468,7 @@ describe("gateway lane cases", () => {
         expect(testCase.expect.status).toBeUndefined();
         expect(lane).toBe(testCase.expect.lane);
 
-        const token =
-          testCase.request.authorization?.toLowerCase().startsWith("bearer ") === true
-            ? testCase.request.authorization.slice("bearer ".length).trim()
-            : null;
-        assertCenterTraffic(testCase, stub, counter.calls, token);
+        assertCenterTraffic(testCase, stub, counter.calls, tokenOf(testCase));
       });
     });
   }

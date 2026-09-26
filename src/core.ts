@@ -1,8 +1,9 @@
 /**
  * @file The policy, with no framework anywhere near it.
  *
- * This is the thirty-seven calling-service cases of
- * `meta/fixtures/introspection.json` and nothing else. The Express adapter is
+ * This is the calling-service cases of `meta/fixtures/introspection.json` and
+ * nothing else — all forty, the three with two `Authorization` lines once the
+ * caller has counted them (see {@link authorizationLines}). The Express adapter is
  * a thin translation on top; a `mux` wrapper or a servlet filter would be
  * another. What is fixed is the answer, the request to the center and the call
  * count — everything the fixture can observe from outside.
