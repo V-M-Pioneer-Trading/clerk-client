@@ -311,6 +311,8 @@ const runHandler = (
         method: req.method,
         header: (name: string) =>
           name.toLowerCase() === "authorization" ? req.authorization : undefined,
+        rawHeaders:
+          req.authorization === undefined ? [] : ["Authorization", req.authorization],
       },
       res,
       (error?: unknown) => finish(true, error)

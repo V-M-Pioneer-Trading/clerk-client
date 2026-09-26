@@ -50,7 +50,11 @@ export interface InboundRequest {
   readonly method: string;
   /** What the route declares it needs. */
   readonly requires: RouteRequirement;
-  /** The raw `Authorization` header, or null/undefined when absent. */
+  /**
+   * The raw `Authorization` header, or null/undefined when absent — and null
+   * when the request carried more than one `Authorization` line, which this
+   * string cannot show: see {@link authorizationLines}.
+   */
   readonly authorization?: string | null;
 }
 
@@ -76,15 +80,20 @@ export interface InboundRequest {
  *   credential. Picking one of them would let a caller choose which of two
  *   credentials a service verifies.
  *
- * **Two `Authorization` request headers do not produce that value.** Node's
- * parser does not join repeats of `Authorization`: it is on the list of
- * single-value headers it discards duplicates of, so `req.headers.authorization`
- * — and therefore `req.header("Authorization")` — is the **first** line and the
- * second is dropped before any of this runs. Verified on the wire in
- * `credential.test.ts` rather than assumed. The joined shape is still handled
- * here because a proxy or a framework may fold one, and an array (the shape a
- * framework may hand back for a repeated header) is joined the way Node joins
- * a repeatable header and then fails the same count check.
+ * **Two `Authorization` request headers do not produce that value, and this
+ * function cannot see them.** Node's parser does not join repeats of
+ * `Authorization`: it is on the list of single-value headers it discards
+ * duplicates of, so `req.headers.authorization` — and therefore
+ * `req.header("Authorization")` — is the **first** line and the second is
+ * dropped before any of this runs. Handed that value, this function reads the
+ * first credential as a credential. The line count has to be taken from the
+ * request's raw headers **before** the value gets here: see
+ * {@link authorizationLines}, which the Express adapter applies and a caller of
+ * {@link createAuthorizer} or `createLaneDeriver` must apply itself. Verified
+ * on the wire in `credential.test.ts` rather than assumed. The joined shape is
+ * still handled here because a proxy or a framework may fold one, and an array
+ * (the shape a framework may hand back for a repeated header) is joined the
+ * way Node joins a repeatable header and then fails the same count check.
  */
 export const bearerFrom = (
   header: string | readonly string[] | null | undefined
@@ -103,6 +112,45 @@ export const bearerFrom = (
   // that survival is proven equivalence rather than a missing test. It stays
   // because it is the invariant the NEXT edit to the split would break.
   return token.length > 0 ? token : null;
+};
+
+/**
+ * How many `Authorization` lines a request carried, counted from Node's
+ * `rawHeaders` (alternating name, value; names in whatever case the client
+ * sent them, so compared case-insensitively).
+ *
+ * **More than one is never a credential**, whatever the values are: two
+ * well-formed bearers, a bearer and an empty line, an empty line and a bearer.
+ * The rule exists because Node's parser keeps the *first* `Authorization` line
+ * and silently discards the rest, so `req.headers.authorization` alone lets a
+ * caller choose which of two credentials gets verified by choosing their
+ * order — or, with an empty first line, turn a credentialed request into an
+ * anonymous one. `rawHeaders` is the only place the repeat is still visible.
+ *
+ * The Express adapter applies this itself. Anything that hands a header value
+ * to {@link createAuthorizer} or to `createLaneDeriver` directly must apply it
+ * first, and pass `null` when the count is above one:
+ *
+ * ```ts
+ * const header = authorizationLines(req.rawHeaders) > 1 ? null : req.header("Authorization");
+ * ```
+ *
+ * A value that is not an array counts as zero: there is nothing to count. The
+ * adapter does not rely on that — it refuses to read a credential at all from
+ * a request that has no `rawHeaders`.
+ */
+export const authorizationLines = (rawHeaders: readonly string[]): number => {
+  if (!Array.isArray(rawHeaders)) return 0;
+  let lines = 0;
+  // Names sit at even indices. Stepping by one would count a VALUE that
+  // happens to read "authorization" as a line.
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const name: unknown = rawHeaders[index];
+    if (typeof name === "string" && name.toLowerCase() === "authorization") {
+      lines += 1;
+    }
+  }
+  return lines;
 };
 
 const reject = (

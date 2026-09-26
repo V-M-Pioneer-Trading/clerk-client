@@ -26,7 +26,12 @@ export type { CenterAnswer, Introspector } from "./center";
 export { createIntrospector, splitScopes } from "./center";
 
 export type { Authorizer, InboundRequest } from "./core";
-export { bearerFrom, createAuthorizer, isSafeMethod } from "./core";
+export {
+  authorizationLines,
+  bearerFrom,
+  createAuthorizer,
+  isSafeMethod,
+} from "./core";
 
 export type { LaneDeriver } from "./gateway";
 export { createLaneDeriver } from "./gateway";
