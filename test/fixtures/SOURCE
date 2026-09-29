@@ -16,8 +16,8 @@ credential: say why, and pin it (fixture v4)"). Version 4 lets
 three calling-service cases and one gateway case in which two lines are no
 credential and the center is not called; 1.1.2 is the first release that
 passes them. The conformance suite sends an array case as real, separate
-header lines through real Express (and, for the gateway case, through a Node
-server applying `authorizationLines`), and an authorization of any other
+header lines through real Express (and, for the gateway case, through an
+Express app applying `authorizationLines`), and an authorization of any other
 shape fails the case.
 
 The sha256 is over the LF bytes of the blob as git stores it, which is what

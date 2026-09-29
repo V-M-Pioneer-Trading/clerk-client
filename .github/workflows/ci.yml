@@ -424,6 +424,7 @@ jobs:
             actorOf,
             authorizationLines,
             createExpressAuth,
+            createLaneDeriver,
             secured,
           } = require('@v-m-pioneer-trading/introspection-client');
 
@@ -475,6 +476,15 @@ jobs:
             api.get('/health', auth.ignoreCredentials(), whoami);
             const app = express();
             app.use('/api', api);
+            // st-gateway's shape: the README's recipe in front of the deriver.
+            const deriver = createLaneDeriver({
+              url: 'http://127.0.0.1:' + center.address().port + '/auth/v1/introspect',
+              secret: 'runtime-proof-secret',
+            });
+            app.get('/lane', (req, res) => {
+              const header = authorizationLines(req) === 1 ? req.header('Authorization') : null;
+              deriver.derive(header).then((lane) => res.json({ lane }));
+            });
             const server = app.listen(0, '127.0.0.1');
             await new Promise((r) => server.once('listening', r));
             const port = server.address().port;
@@ -506,9 +516,25 @@ jobs:
               ['Authorization: Bearer a.token'], 200, '{"actor":"user_a"}', 1);
             await expect('one lowercase line, scoped POST', 'POST', '/api/scoped',
               ['authorization: Bearer b.token'], 200, '{"actor":"user_b"}', 1);
+            await expect('three lines, scoped POST', 'POST', '/api/scoped',
+              ['Authorization: Bearer a.token', 'Authorization: Bearer b.token', 'Authorization: Bearer a.token'],
+              401, noToken, 0);
 
-            if (authorizationLines(['authorization', 'x', 'Authorization', '']) !== 2) {
+            // Node stops recording header lines at 2 x maxHeadersCount entries
+            // (2000 by default), so a second line behind ~1000 fillers is never
+            // counted unless the limit itself is checked.
+            const hidden = ['Authorization: Bearer a.token', ...Array(1100).fill('x: 1'), 'Authorization: Bearer b.token'];
+            await expect('second line behind 1100 fillers, scoped POST', 'POST', '/api/scoped', hidden, 401, noToken, 0);
+            await expect('second line behind 1100 fillers, allowPublic GET', 'GET', '/api/public', hidden, 200, '{"actor":null}', 0);
+            await expect('second line behind 1100 fillers, lane recipe', 'GET', '/lane', hidden, 200, '{"lane":"background"}', 0);
+            await expect('one line, lane recipe', 'GET', '/lane',
+              ['Authorization: Bearer a.token'], 200, '{"lane":"interactive"}', 1);
+
+            if (authorizationLines({ rawHeaders: ['authorization', 'x', 'Authorization', ''] }) !== 2) {
               fail('authorizationLines is not exported, or does not count case-insensitively');
+            }
+            if (authorizationLines({}) !== Infinity) {
+              fail('authorizationLines reads a request with no rawHeaders as countable');
             }
 
             server.close();

@@ -26,7 +26,7 @@ export type {
 export type { CenterAnswer, Introspector } from "./center";
 export { createIntrospector, splitScopes } from "./center";
 
-export type { Authorizer, InboundRequest } from "./core";
+export type { Authorizer, InboundRequest, RawHeaderSource } from "./core";
 export {
   authorizationLines,
   bearerFrom,

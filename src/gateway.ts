@@ -23,10 +23,10 @@ export interface LaneDeriver {
    * `authorizationHeader` is one header VALUE, so it cannot show that the
    * request carried two `Authorization` lines — Node keeps the first and drops
    * the rest. The caller applies the line-count rule before calling, and
-   * passes `null` for more than one line:
+   * passes `null` unless there was exactly one line:
    *
    * ```ts
-   * deriver.derive(authorizationLines(req.rawHeaders) > 1 ? null : req.header("Authorization"));
+   * deriver.derive(authorizationLines(req) === 1 ? req.header("Authorization") : null);
    * ```
    *
    * Without it a caller picks which of two credentials decides the lane.

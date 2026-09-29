@@ -11,7 +11,7 @@
  * `Authorization` lines, and a value cannot carry that: Node keeps the first
  * line and drops the rest before anything reads it. Those cases are therefore
  * sent over HTTP as real, separate header lines — through real Express and
- * `createExpressAuth` for the calling-service cases, and through a Node server
+ * `createExpressAuth` for the calling-service cases, and through an Express app
  * applying `authorizationLines` in front of `createLaneDeriver` for the
  * gateway case, which is the recipe the README gives st-gateway. The receiving
  * server records the lines it saw, so a sender that folded them into one would
@@ -19,7 +19,7 @@
  * shape fails the case.
  */
 
-import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import express from "express";
@@ -342,8 +342,9 @@ const decideOverTheWire = async (
 };
 
 /**
- * The gateway case with several `Authorization` lines: a Node server applying
- * the README's recipe in front of `derive`, which is all st-gateway has.
+ * The gateway case with several `Authorization` lines: an Express app applying
+ * the README's recipe, verbatim, in front of `derive`, which is all
+ * st-gateway has.
  */
 const laneOverTheWire = async (
   stubUrl: string,
@@ -351,16 +352,13 @@ const laneOverTheWire = async (
 ): Promise<string> => {
   const deriver = createLaneDeriver({ url: stubUrl, secret: SECRET });
   const seen: string[][] = [];
-  const server = createServer((req, res) => {
+  const app = express();
+  app.get("/case", (req, res) => {
     seen.push(authorizationLinesSeen(req));
-    const header =
-      authorizationLines(req.rawHeaders) > 1 ? null : req.headers.authorization;
-    void deriver.derive(header).then((lane) => {
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ lane }));
-    });
+    const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
+    void deriver.derive(header).then((lane) => res.json({ lane }));
   });
-  server.listen(0, "127.0.0.1");
+  const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
     const { body } = await sendLines(

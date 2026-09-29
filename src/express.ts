@@ -104,6 +104,13 @@ export interface RequestLike {
    * otherwise be read as carrying exactly one line, which is the defect.
    */
   readonly rawHeaders: readonly string[];
+  /**
+   * The connection, read for `socket.server.maxHeadersCount` and nothing
+   * else: past that limit Node stops recording header lines, so a repeat can
+   * be missing from `rawHeaders`. Optional because a double need not have
+   * one; without it Node's default limit is assumed.
+   */
+  readonly socket?: unknown;
 }
 
 /** The part of an Express `Response` this adapter writes. */
@@ -1117,7 +1124,7 @@ export function createExpressAuth(
 
 /**
  * The `Authorization` value this request may be authorized on, or null for
- * **no credential**.
+ * **no credential** — which is every answer but exactly one raw line.
  *
  * Node's parser keeps the first `Authorization` line and discards any repeat,
  * so `req.header("Authorization")` for `Bearer a` + `Bearer b` is `"Bearer a"`,
@@ -1129,18 +1136,21 @@ export function createExpressAuth(
  * bearer token is required` where a session is needed, a visitor on a public
  * read, and no call to the center either way.
  *
- * A request with no `rawHeaders` array cannot be counted, and is read as no
- * credential rather than trusted to have sent one line.
+ * A request whose lines cannot be counted — no `rawHeaders` array, or one
+ * that reached the server's header limit, where Node stops recording lines
+ * and a second `Authorization` can be missing — is no credential too.
  *
- * With exactly one line the value still comes from `header()`, as it always
- * has; a comma-folded value carrying two credentials is then read by
- * `bearerFrom` as none.
+ * So is a request with **zero** raw lines whose `header()` still answers:
+ * nothing on the wire carried that value, so something in the process put it
+ * there. Middleware that sets `req.headers.authorization` itself is not
+ * supported; this adapter verifies what the caller sent.
+ *
+ * With exactly one line the value comes from `header()`, as it always has;
+ * a comma-folded value carrying two credentials is then read by `bearerFrom`
+ * as none.
  */
-const credentialOf = (req: RequestLike): string | null => {
-  if (!Array.isArray(req.rawHeaders)) return null;
-  if (authorizationLines(req.rawHeaders) > 1) return null;
-  return headerValue(req, "Authorization");
-};
+const credentialOf = (req: RequestLike): string | null =>
+  authorizationLines(req) === 1 ? headerValue(req, "Authorization") : null;
 
 /** One header as a single string, or null. An array is joined as Node joins. */
 const headerValue = (req: RequestLike, name: string): string | null => {

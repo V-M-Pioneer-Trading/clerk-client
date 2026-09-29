@@ -208,7 +208,7 @@ describe("two Authorization headers, as they really arrive", () => {
       res.end(
         JSON.stringify({
           header: req.headers.authorization ?? null,
-          rawCount: authorizationLines(req.rawHeaders),
+          rawCount: authorizationLines(req),
         })
       );
     });

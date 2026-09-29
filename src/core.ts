@@ -53,7 +53,7 @@ export interface InboundRequest {
   readonly requires: RouteRequirement;
   /**
    * The raw `Authorization` header, or null/undefined when absent — and null
-   * when the request carried more than one `Authorization` line, which this
+   * unless the request carried exactly one `Authorization` line, which this
    * string cannot show: see {@link authorizationLines}.
    */
   readonly authorization?: string | null;
@@ -116,40 +116,103 @@ export const bearerFrom = (
 };
 
 /**
+ * What {@link authorizationLines} reads off a request: Node's `rawHeaders`,
+ * and the socket, for the server's `maxHeadersCount`. A Node
+ * `IncomingMessage` and an Express `Request` both satisfy it without a cast.
+ */
+export interface RawHeaderSource {
+  /** Every header line as parsed, alternating name and value. */
+  readonly rawHeaders: readonly string[];
+  /**
+   * The connection. `socket.server.maxHeadersCount` is read if present, and
+   * only that; typed `unknown` so nothing here names a Node type.
+   */
+  readonly socket?: unknown;
+}
+
+/** Node's header-pair limit when `server.maxHeadersCount` is left unset. */
+const NODE_DEFAULT_RAW_HEADER_ENTRIES = 2000;
+
+/**
+ * How many `rawHeaders` entries Node will keep for this request before it
+ * stops appending, or `Infinity` when it keeps them all.
+ *
+ * Mirrors Node's own arithmetic: a numeric `server.maxHeadersCount` becomes
+ * `maxHeadersCount << 1` entries, and a result `<= 0` (a `0`, a negative, a
+ * `NaN`) means no limit; anything else — unset, `null`, no server on the
+ * socket — is Node's default of 2000 entries. Assuming the default when the
+ * server cannot be seen is the safe direction: a server with a higher limit
+ * only has its larger requests refused, never a truncated one trusted.
+ */
+const rawHeaderEntryCap = (socket: unknown): number => {
+  const server =
+    typeof socket === "object" && socket !== null
+      ? (socket as { readonly server?: unknown }).server
+      : undefined;
+  const max =
+    typeof server === "object" && server !== null
+      ? (server as { readonly maxHeadersCount?: unknown }).maxHeadersCount
+      : undefined;
+  if (typeof max !== "number") return NODE_DEFAULT_RAW_HEADER_ENTRIES;
+  const entries = max << 1;
+  return entries <= 0 ? Number.POSITIVE_INFINITY : entries;
+};
+
+/**
  * How many `Authorization` lines a request carried, counted from Node's
  * `rawHeaders` (alternating name, value; names in whatever case the client
- * sent them, so compared case-insensitively).
+ * sent them, so compared case-insensitively) — or `Infinity` when the count
+ * cannot be known.
  *
- * **More than one is never a credential**, whatever the values are: two
- * well-formed bearers, a bearer and an empty line, an empty line and a bearer.
- * The rule exists because Node's parser keeps the *first* `Authorization` line
- * and silently discards the rest, so `req.headers.authorization` alone lets a
- * caller choose which of two credentials gets verified by choosing their
- * order — or, with an empty first line, turn a credentialed request into an
- * anonymous one. `rawHeaders` is the only place the repeat is still visible.
+ * **Exactly one is a credential; anything else is not.** More than one,
+ * whatever the values are — two well-formed bearers, a bearer and an empty
+ * line, an empty line and a bearer — because Node's parser keeps the *first*
+ * `Authorization` line and silently discards the rest, so
+ * `req.headers.authorization` alone lets a caller choose which of two
+ * credentials gets verified by choosing their order, or with an empty first
+ * line turn a credentialed request into an anonymous one. `rawHeaders` is the
+ * only place the repeat is still visible.
+ *
+ * **`Infinity` means "unknowable", and it never reads as one line:**
+ *
+ * - `rawHeaders` is not an array, has an odd length, or holds a non-string
+ *   name. There is nothing trustworthy to count.
+ * - `rawHeaders` has reached the server's header limit. Node stops appending
+ *   to `rawHeaders` (and `headers`) once it holds `2 × maxHeadersCount`
+ *   entries — 2000 by default, roughly five kilobytes of `x:1` filler, far
+ *   under `maxHeaderSize` — so a second `Authorization` line sent after the
+ *   filler is simply not there to count. It arrives in batches, so a request
+ *   at the limit cannot be told from one that went past it, and both are
+ *   refused. `server.maxHeadersCount = 0` lifts the limit and this check with
+ *   it.
  *
  * The Express adapter applies this itself. Anything that hands a header value
- * to {@link createAuthorizer} or to `createLaneDeriver` directly must apply it
- * first, and pass `null` when the count is above one:
+ * to {@link createAuthorizer} or to `createLaneDeriver` directly takes it
+ * from here, and passes `null` unless the answer is exactly one:
  *
  * ```ts
- * const header = authorizationLines(req.rawHeaders) > 1 ? null : req.header("Authorization");
+ * const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
  * ```
  *
- * A value that is not an array counts as zero: there is nothing to count. The
- * adapter does not rely on that — it refuses to read a credential at all from
- * a request that has no `rawHeaders`.
+ * It takes the request rather than its `rawHeaders` because the limit lives
+ * on the server, and a caller handed only the array could not know it.
  */
-export const authorizationLines = (rawHeaders: readonly string[]): number => {
-  if (!Array.isArray(rawHeaders)) return 0;
+export const authorizationLines = (request: RawHeaderSource): number => {
+  const rawHeaders: unknown =
+    typeof request === "object" && request !== null ? request.rawHeaders : undefined;
+  if (!Array.isArray(rawHeaders) || rawHeaders.length % 2 !== 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  if (rawHeaders.length >= rawHeaderEntryCap(request.socket)) {
+    return Number.POSITIVE_INFINITY;
+  }
   let lines = 0;
   // Names sit at even indices. Stepping by one would count a VALUE that
   // happens to read "authorization" as a line.
   for (let index = 0; index < rawHeaders.length; index += 2) {
     const name: unknown = rawHeaders[index];
-    if (typeof name === "string" && name.toLowerCase() === "authorization") {
-      lines += 1;
-    }
+    if (typeof name !== "string") return Number.POSITIVE_INFINITY;
+    if (name.toLowerCase() === "authorization") lines += 1;
   }
   return lines;
 };

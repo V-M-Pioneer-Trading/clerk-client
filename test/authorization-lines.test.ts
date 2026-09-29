@@ -25,9 +25,11 @@ import {
   actorOf,
   authorizationLines,
   createExpressAuth,
+  createLaneDeriver,
   MESSAGES,
   secured,
   type HandlerLike,
+  type RawHeaderSource,
   type ResponseLike,
 } from "../src/index";
 
@@ -57,6 +59,9 @@ const asked: string[] = [];
 
 let app: Server;
 let appPort: number;
+/** The same app on a server with `maxHeadersCount = 0`: no header limit. */
+let unlimited: Server;
+let unlimitedPort: number;
 
 beforeAll(async () => {
   center = createServer((req, res) => {
@@ -95,17 +100,32 @@ beforeAll(async () => {
   server.use("/api", api);
   server.use("/guarded", auth.guard(() => "session"), generated);
 
+  // st-gateway's shape: no adapter, just the README's recipe in front of the
+  // lane deriver. Both tokens are operators, so reaching the center is
+  // "interactive" and anything else is "background".
+  const deriver = createLaneDeriver({ url: centerUrl, secret: SECRET });
+  server.get("/lane", (req, res) => {
+    const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
+    void deriver.derive(header).then((lane) => res.json({ lane }));
+  });
+
   app = server.listen(0, "127.0.0.1");
   await once(app, "listening");
   appPort = (app.address() as AddressInfo).port;
+
+  unlimited = createServer(server);
+  unlimited.maxHeadersCount = 0;
+  unlimited.listen(0, "127.0.0.1");
+  await once(unlimited, "listening");
+  unlimitedPort = (unlimited.address() as AddressInfo).port;
 });
 
 afterAll(async () => {
-  app.closeAllConnections();
-  app.close();
-  center.closeAllConnections();
-  center.close();
-  await Promise.all([once(app, "close"), once(center, "close")]);
+  for (const server of [app, unlimited, center]) {
+    server.closeAllConnections();
+    server.close();
+  }
+  await Promise.all([once(app, "close"), once(unlimited, "close"), once(center, "close")]);
 });
 
 beforeEach(() => {
@@ -124,9 +144,10 @@ interface RawResponse {
 const raw = async (
   method: "GET" | "POST",
   path: string,
-  headerLines: readonly string[]
+  headerLines: readonly string[],
+  port: number = appPort
 ): Promise<RawResponse> => {
-  const socket = connect(appPort, "127.0.0.1");
+  const socket = connect(port, "127.0.0.1");
   await once(socket, "connect");
   socket.write(
     [
@@ -271,55 +292,237 @@ describe("one line is still a credential", () => {
   });
 });
 
-describe("authorizationLines", () => {
-  it("counts names at even indices, in any case", () => {
-    expect(authorizationLines([])).toBe(0);
-    expect(authorizationLines(["Host", "x"])).toBe(0);
-    expect(authorizationLines(["Authorization", "Bearer a"])).toBe(1);
-    expect(
-      authorizationLines(["authorization", "Bearer a", "AuThOrIzAtIoN", ""])
-    ).toBe(2);
-  });
-
-  it("never counts a value", () => {
-    expect(authorizationLines(["X-Note", "authorization"])).toBe(0);
-    expect(
-      authorizationLines(["X-Note", "Authorization", "Authorization", "Bearer a"])
-    ).toBe(1);
-  });
-
-  it("counts nothing in something that is not an array", () => {
-    expect(authorizationLines(undefined as unknown as string[])).toBe(0);
+describe("three lines are not one either", () => {
+  it("answers 401 on a scoped POST, without asking the center", async () => {
+    // Pins "exactly one", not "not two": a rule written as `=== 2` would pass
+    // every two-line case above and serve this.
+    const response = await raw("POST", "/api/scoped", [
+      "Authorization: Bearer a.token",
+      "Authorization: Bearer b.token",
+      "Authorization: Bearer a.token",
+    ]);
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual(missingToken);
+    expect(asked).toEqual([]);
   });
 });
 
-describe("a request with no rawHeaders", () => {
-  it("is read as no credential rather than trusted to carry one line", async () => {
+/**
+ * Node stops appending to `rawHeaders` (and `headers`) once it holds
+ * `2 × server.maxHeadersCount` entries (2000 by default), so a second
+ * `Authorization` line sent after ~1000 filler lines is not there to count.
+ * Five kilobytes of `x: 1`, far under the 16 KiB `maxHeaderSize`.
+ */
+const filler = (count: number): string[] => Array.from({ length: count }, () => "x: 1");
+const smuggled = (count: number): string[] => [
+  "Authorization: Bearer a.token",
+  ...filler(count),
+  "Authorization: Bearer b.token",
+];
+
+describe("a second line hidden past Node's header limit", () => {
+  it("is refused on a scoped POST: 401, no center", async () => {
+    // Without the limit check this was 200 as user_a: rawHeaders held one
+    // Authorization line, because the second was never recorded.
+    const response = await raw("POST", "/api/scoped", smuggled(1100));
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual(missingToken);
+    expect(asked).toEqual([]);
+  });
+
+  it("is refused behind a router-level guard(): 401, no center", async () => {
+    const response = await raw("GET", "/guarded/ships", smuggled(1100));
+    expect(response.status).toBe(401);
+    expect(asked).toEqual([]);
+  });
+
+  it("serves an allowPublic() read as a visitor, no center", async () => {
+    const response = await raw("GET", "/api/public", smuggled(1100));
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ actor: null });
+    expect(asked).toEqual([]);
+  });
+
+  it("puts the README lane recipe in the background lane, no center", async () => {
+    const response = await raw("GET", "/lane", smuggled(1100));
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ lane: "background" });
+    expect(asked).toEqual([]);
+  });
+
+  it("refuses even ONE line once the request reaches the limit", async () => {
+    // At the limit, a request that stopped short cannot be told from one that
+    // went past it (Node records lines in batches), so both are refused.
+    // 996 fillers + Host + Authorization + Content-Length + Connection =
+    // 1000 lines = 2000 entries.
+    const response = await raw("POST", "/api/scoped", [
+      "Authorization: Bearer a.token",
+      ...filler(996),
+    ]);
+    expect(response.status).toBe(401);
+    expect(asked).toEqual([]);
+  });
+
+  it("verifies one line just under the limit", async () => {
+    // One line fewer: 999 lines, 1998 entries, every one recorded. The POST
+    // carries a Content-Length line the GET below does not.
+    const scoped = await raw("POST", "/api/scoped", [
+      "Authorization: Bearer a.token",
+      ...filler(995),
+    ]);
+    expect(scoped.status).toBe(200);
+    expect(scoped.body).toEqual({ actor: "user_a" });
+
+    const lane = await raw("GET", "/lane", ["Authorization: Bearer b.token", ...filler(996)]);
+    expect(lane.body).toEqual({ lane: "interactive" });
+    expect(asked).toEqual(["a.token", "b.token"]);
+  });
+
+  it("counts both lines on a server with maxHeadersCount = 0 (no limit)", async () => {
+    // The limit is read from the server, not assumed: with it lifted, Node
+    // records all 1100 fillers and the second line, and the count is exact.
+    const scoped = await raw("POST", "/api/scoped", smuggled(1100), unlimitedPort);
+    expect(scoped.status).toBe(401);
+    expect(scoped.body).toEqual(missingToken);
+
+    const lane = await raw("GET", "/lane", smuggled(1100), unlimitedPort);
+    expect(lane.body).toEqual({ lane: "background" });
+    expect(asked).toEqual([]);
+
+    // And one line among the same filler is still a credential there.
+    const one = await raw(
+      "POST",
+      "/api/scoped",
+      ["Authorization: Bearer a.token", ...filler(1100)],
+      unlimitedPort
+    );
+    expect(one.status).toBe(200);
+    expect(asked).toEqual(["a.token"]);
+  });
+});
+
+describe("authorizationLines", () => {
+  const of = (rawHeaders: unknown, socket?: unknown): number =>
+    authorizationLines({ rawHeaders, socket } as RawHeaderSource);
+
+  it("counts names at even indices, in any case", () => {
+    expect(of([])).toBe(0);
+    expect(of(["Host", "x"])).toBe(0);
+    expect(of(["Authorization", "Bearer a"])).toBe(1);
+    expect(of(["authorization", "Bearer a", "AuThOrIzAtIoN", ""])).toBe(2);
+    expect(
+      of(["a", "1", "Authorization", "x", "b", "2", "authorization", "y", "AUTHORIZATION", "z"])
+    ).toBe(3);
+  });
+
+  it("never counts a value", () => {
+    expect(of(["X-Note", "authorization"])).toBe(0);
+    expect(of(["X-Note", "Authorization", "Authorization", "Bearer a"])).toBe(1);
+  });
+
+  it.each([
+    ["no rawHeaders at all", undefined],
+    ["a string", "Authorization: Bearer a"],
+    ["an odd-length list", ["Authorization"]],
+    ["a name at an odd offset only", ["Bearer a", "Authorization", "x"]],
+    ["a non-string name", [7, "Bearer a"]],
+  ])("answers Infinity, never one, for %s", (_name, rawHeaders) => {
+    expect(of(rawHeaders)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("answers Infinity for a bare array, the pre-release call shape", () => {
+    // `authorizationLines(req.rawHeaders)`: the array has no `rawHeaders` of
+    // its own, so it reads as uncountable rather than as zero or one.
+    expect(authorizationLines(["Authorization", "a"] as unknown as RawHeaderSource)).toBe(
+      Number.POSITIVE_INFINITY
+    );
+    expect(authorizationLines(undefined as unknown as RawHeaderSource)).toBe(
+      Number.POSITIVE_INFINITY
+    );
+  });
+
+  it("reads the limit off socket.server.maxHeadersCount the way Node does", () => {
+    const entries = (n: number): string[] =>
+      Array.from({ length: n }, (_v, i) => (i % 2 === 0 ? "x" : "1"));
+    const server = (maxHeadersCount: unknown) => ({ server: { maxHeadersCount } });
+
+    // Unset, null, or no server to read: Node's default, 2000 entries.
+    expect(of(entries(1998))).toBe(0);
+    expect(of(entries(2000))).toBe(Number.POSITIVE_INFINITY);
+    expect(of(entries(2000), server(null))).toBe(Number.POSITIVE_INFINITY);
+    expect(of(entries(2000), {})).toBe(Number.POSITIVE_INFINITY);
+    // A number: twice it.
+    expect(of(entries(18), server(10))).toBe(0);
+    expect(of(entries(20), server(10))).toBe(Number.POSITIVE_INFINITY);
+    expect(of(entries(3998), server(2000))).toBe(0);
+    // Zero, negative or NaN: `<< 1` is <= 0, which Node reads as no limit.
+    expect(of(entries(5000), server(0))).toBe(0);
+    expect(of(entries(5000), server(-1))).toBe(0);
+    expect(of(entries(5000), server(Number.NaN))).toBe(0);
+  });
+});
+
+/** Runs one adapter handler against a hand-made request, and reports the status. */
+const statusFor = async (request: unknown): Promise<number> => {
+  const handler: HandlerLike = createExpressAuth({
+    url: centerUrl,
+    secret: SECRET,
+  }).requireSession();
+  let status = 0;
+  const res = {
+    locals: {},
+    status(code: number) {
+      status = code;
+      return res;
+    },
+    json: () => undefined,
+  };
+  await new Promise<void>((resolve) => {
+    handler(request as Parameters<HandlerLike>[0], res, () => {
+      status = 200;
+      resolve();
+    });
+    setTimeout(resolve, 200);
+  });
+  return status;
+};
+
+describe("a request whose raw lines do not account for its header", () => {
+  it("is no credential when it has no rawHeaders", async () => {
     // A JavaScript caller, or a cast, can hand the adapter a request without
     // `rawHeaders`. Nothing can be counted, so nothing is read.
-    const auth = createExpressAuth({ url: centerUrl, secret: SECRET });
-    const handler: HandlerLike = auth.requireSession();
-    let status = 0;
-    const res = {
-      locals: {},
-      status(code: number) {
-        status = code;
-        return res;
-      },
-      json: () => undefined,
-    };
-    await new Promise<void>((resolve) => {
-      handler(
-        {
-          method: "GET",
-          header: () => "Bearer a.token",
-        } as unknown as Parameters<HandlerLike>[0],
-        res,
-        () => resolve()
-      );
-      setTimeout(resolve, 200);
-    });
-    expect(status).toBe(401);
+    expect(await statusFor({ method: "GET", header: () => "Bearer a.token" })).toBe(401);
     expect(asked).toEqual([]);
+  });
+
+  it("is no credential when it has zero raw lines but header() answers", async () => {
+    // Nothing on the wire carried that value, so something in the process put
+    // it there. Middleware that sets req.headers.authorization is unsupported.
+    expect(
+      await statusFor({ method: "GET", rawHeaders: [], header: () => "Bearer a.token" })
+    ).toBe(401);
+    expect(asked).toEqual([]);
+  });
+
+  it("is no credential when the only Authorization name is at an odd offset", async () => {
+    expect(
+      await statusFor({
+        method: "GET",
+        rawHeaders: ["Bearer a.token", "Authorization"],
+        header: () => "Bearer a.token",
+      })
+    ).toBe(401);
+    expect(asked).toEqual([]);
+  });
+
+  it("is a credential when one raw line and header() agree", async () => {
+    expect(
+      await statusFor({
+        method: "GET",
+        rawHeaders: ["Authorization", "Bearer a.token"],
+        header: () => "Bearer a.token",
+      })
+    ).toBe(200);
+    expect(asked).toEqual(["a.token"]);
   });
 });

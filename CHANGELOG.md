@@ -19,13 +19,28 @@ Part of V-M-Pioneer-Trading/meta#80.
   to `requireScope`, `requireSession`, `allowPublic` and `guard` alike;
   `ignoreCredentials()` still reads no header. Upgrade any service on 1.1.1 or
   earlier.
+- **A count that cannot be known is no credential either.** Node stops
+  recording header lines once `rawHeaders` holds `2 × server.maxHeadersCount`
+  entries (2000 by default, about five kilobytes of filler), so a second
+  `Authorization` line sent after ~1000 filler lines was never counted and the
+  first was verified. A request whose `rawHeaders` has reached the server's
+  limit — read from `req.socket.server.maxHeadersCount` the way Node reads it;
+  `0` means no limit — is now no credential, even with one line. So is a
+  request with no `rawHeaders`, and one with zero `Authorization` lines on the
+  wire whose `req.header("Authorization")` still answers: middleware that sets
+  `req.headers.authorization` itself is unsupported.
 
 ### Added
 
-- `authorizationLines(rawHeaders)`: how many `Authorization` lines a request
-  carried. `createAuthorizer().authorize()` and `createLaneDeriver().derive()`
-  take one header value and cannot see a repeat, so their callers — st-gateway
-  above all — pass `null` when this is above one. The README shows the recipe.
+- `authorizationLines(req: RawHeaderSource): number` (and the
+  `RawHeaderSource` type, `{ rawHeaders, socket? }`, which a Node or Express
+  request satisfies): how many `Authorization` lines a request carried, or
+  `Infinity` when that cannot be known. `createAuthorizer().authorize()` and
+  `createLaneDeriver().derive()` take one header value and cannot see a
+  repeat, so their callers — st-gateway above all — pass
+  `authorizationLines(req) === 1 ? req.header("Authorization") : null`. It
+  takes the request, not its `rawHeaders`, because the header limit lives on
+  the server.
 
 ### Changed
 
@@ -33,7 +48,8 @@ Part of V-M-Pioneer-Trading/meta#80.
   already has it, so code that hands the adapter real requests is unaffected; a
   hand-written request double no longer typechecks until it adds one. At
   runtime a request without a `rawHeaders` array is read as carrying no
-  credential, never as carrying one line.
+  credential, never as carrying one line. It also gained an optional
+  `socket`, read only for `server.maxHeadersCount`.
 - Fixture version 4 vendored (meta `46c033e`, 40 + 12 cases); its four
   two-line cases run as real separate header lines through real Express and
   the lane recipe.
