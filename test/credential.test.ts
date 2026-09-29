@@ -18,7 +18,7 @@ import { once } from "node:events";
 import { connect, type AddressInfo } from "node:net";
 
 import { createIntrospector } from "../src/center";
-import { bearerFrom, isSafeMethod } from "../src/core";
+import { authorizationLines, bearerFrom, isSafeMethod } from "../src/core";
 import { DEFAULT_TIMEOUT_MS, SECRET_HEADER } from "../src/messages";
 
 const SECRET = "credential-suite-secret";
@@ -195,6 +195,12 @@ describe("two Authorization headers, as they really arrive", () => {
    * DISCARDED and the first line wins. Nothing about the package's behaviour
    * changes, but the claim was wrong, so it is now tested on the wire with a
    * raw socket rather than asserted in a comment.
+   *
+   * What it meant was worse than the wrong comment: the adapter read the first
+   * line and verified it, so a caller chose which of two credentials a service
+   * saw. The adapter now counts lines in `rawHeaders` and reads more than one
+   * as no credential — `authorization-lines.test.ts` drives that through real
+   * Express. This block stays as the proof of what Node itself does.
    */
   const raw = async (lines: readonly string[]): Promise<Record<string, unknown>> => {
     const server = createServer((req, res) => {
@@ -202,10 +208,7 @@ describe("two Authorization headers, as they really arrive", () => {
       res.end(
         JSON.stringify({
           header: req.headers.authorization ?? null,
-          rawCount: req.rawHeaders.filter(
-            (name, index) =>
-              index % 2 === 0 && name.toLowerCase() === "authorization"
-          ).length,
+          rawCount: authorizationLines(req),
         })
       );
     });
@@ -248,10 +251,11 @@ describe("two Authorization headers, as they really arrive", () => {
     expect(seen.header).toBe("Bearer first.token");
   });
 
-  it("so the credential a service sees is a well-formed one, and is read", async () => {
-    // The consequence worth stating: a caller sending two headers does not get
-    // "no credential", it gets the first one verified. A service behind a proxy
-    // that folds repeats instead gets the comma value, which reads as none.
+  it("so the parsed value alone looks like one well-formed credential", async () => {
+    // Which is why the parsed value cannot be the input on its own: bearerFrom
+    // reads the first line as a credential, and only the raw count shows there
+    // were two. A service behind a proxy that folds repeats instead gets the
+    // comma value, which reads as none without any count.
     const seen = await raw([
       "Authorization: Bearer first.token",
       "Authorization: Bearer second.token",

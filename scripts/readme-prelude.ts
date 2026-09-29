@@ -18,6 +18,8 @@ import express from "express";
 
 import {
   actorOf,
+  authorizationLines,
+  soleAuthorizationLine,
   createAuthorizer,
   createExpressAuth,
   createLaneDeriver,
@@ -68,14 +70,21 @@ const cors = (_options?: unknown) => (
 ): void => next();
 
 /**
- * A request double, for the snippet that reads one header off it.
+ * A request double, for the snippets that read one header off it and count
+ * its raw lines.
  *
  * `header()` is typed as a real Express `Request` types it for a name other
- * than `set-cookie` — `string | undefined`, not the `string[]` union — because
- * the snippet is a claim about what a consumer's own code compiles to.
+ * than `set-cookie` — `string | undefined`, not the `string[]` union — and
+ * `rawHeaders` as the mutable `string[]` Node declares, because the snippet
+ * is a claim about what a consumer's own code compiles to.
  */
-const req: { readonly method: string; header(name: string): string | undefined } = {
+const req: {
+  readonly method: string;
+  readonly rawHeaders: string[];
+  header(name: string): string | undefined;
+} = {
   method: "GET",
+  rawHeaders: ["Host", "localhost"],
   header: (_name: string): string | undefined => undefined,
 };
 
@@ -96,6 +105,8 @@ export const prelude = () => ({
   config,
   req,
   actorOf,
+  authorizationLines,
+  soleAuthorizationLine,
   identityOf,
   kindOf,
   hasScope,

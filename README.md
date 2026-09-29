@@ -7,11 +7,13 @@ declared. This package is that client for the three Node services
 (fleet-service, automation-service, st-gateway).
 
 Its behaviour is not described here but *fixed* by
-[`fixtures/introspection.json`][fixture] in `meta` — thirty-seven conditions for
-a calling service and eleven for st-gateway's queue lane, each with the center's
+[`fixtures/introspection.json`][fixture] in `meta` — forty conditions for a
+calling service and twelve for st-gateway's queue lane, each with the center's
 response and the exact status, message, identity and call count expected. It is
-vendored into `test/fixtures/`, and the conformance suite drives all forty-eight
-cases against a real local HTTP stub.
+vendored into `test/fixtures/` (version 4), and the conformance suite drives all
+fifty-two cases against a real local HTTP stub. The four version-4 cases carry
+two `Authorization` lines, which no header value can express, so they are sent
+as real separate lines through real Express and through the lane recipe below.
 
 Zero runtime dependencies and **no peer dependencies at all** — not even
 Express, whose types are declared locally, so a consumer with
@@ -22,7 +24,7 @@ URL, which `package-lock.json` records with an integrity hash, so the Docker
 build needs no token and no git.
 
 ```sh
-npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.1/v-m-pioneer-trading-introspection-client-1.1.1.tgz
+npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.2/v-m-pioneer-trading-introspection-client-1.1.2.tgz
 ```
 
 ## Quick start
@@ -129,6 +131,56 @@ requests: a process-wide cache would be a second verification path, would make
 revocation meaningless for its lifetime, and would hand one caller's identity
 to the next caller presenting the same header.
 
+**P7. Two `Authorization` lines are never a credential**, whatever they hold.
+Node's parser keeps the *first* `Authorization` line and discards the rest, so
+`req.header("Authorization")` for `Bearer a` + `Bearer b` is `"Bearer a"` and
+for an empty line + `Bearer b` it is `""`. Read alone, that lets a caller
+choose which of two credentials is verified by choosing their order, or turn a
+credentialed request into a visitor. The adapter therefore counts the lines in
+`req.rawHeaders` — the only place the repeat survives, names compared
+case-insensitively — and **exactly one** is a credential. Anything else is *no
+credential*: `401 a bearer token is required` where a session or scope is
+declared, a visitor on an `allowPublic()` read, and no call to the center
+either way. It is counted where the header is read, once for every
+`requireScope`, `requireSession`, `allowPublic` and `guard`;
+`ignoreCredentials()` reads neither. Anything that is not the adapter —
+`createAuthorizer`, `createLaneDeriver` — takes a header *value* and cannot
+see the count, so its caller applies the rule; see
+[Two `Authorization` lines](#two-authorization-lines--outside-the-adapter).
+
+"Anything else" includes a count that cannot be known, and one way to make it
+unknowable is cheap. Node has a header-count limit of `2 × server.maxHeadersCount`
+entries: 2000 by default, which is about a thousand lines, roughly five
+kilobytes of `x: 1` and far under the 16 KiB `maxHeaderSize`. What happens
+past it depends on the version. Node 22 (what `node:22-alpine` runs) answers
+`431 Request Header Fields Too Large` before any handler runs; Node 25 hands
+the app **truncated** lists — `rawHeaders` overshoots to 2046 entries, being
+filled in batches, while `headers` stops at 2000 — so a second
+`Authorization` line sent after the filler is simply not there to count. The
+check exists for the truncated list, and does not depend on which version is
+running: a request whose `rawHeaders` has reached the limit is no credential,
+even with one line, because lines are recorded in batches and a request at the
+limit cannot be told from one that went past it.
+
+The limit is read from the connection, and the **stricter** of two readings
+wins: `req.socket.server.maxHeadersCount`, with Node's own arithmetic (a
+positive number is twice itself, `0` or less is no limit, unset is 2000), and
+`req.socket.parser.maxHeaderPairs`, the value actually in force. Node copies
+the server's setting into a connection's parser **once, when the connection
+opens**, so set `maxHeadersCount` before the server accepts its first
+connection; a change made later does not reach connections already open, and
+because the adapter also reads the parser's own value, lifting the limit
+mid-connection cannot open a gap. A server with `maxHeadersCount = 0` from the
+start gets an exact count at any size.
+
+The credential is the value **of that one raw line**, taken from
+`rawHeaders` itself — never `req.header("Authorization")` — so the count and
+the value are the same bytes. A request with no `rawHeaders` to count, or
+with **zero** `Authorization` lines on the wire, is no credential whatever
+`req.headers.authorization` holds: middleware that sets or rewrites
+`req.headers.authorization` is **ignored**, because this adapter verifies what
+the caller sent.
+
 ### What this package does **not** protect
 
 A fence whose gaps are unknown is worse than no fence.
@@ -172,6 +224,10 @@ A fence whose gaps are unknown is worse than no fence.
   put anything it likes in a `404` body.
 - **A second copy of this package in one process.** `secured()` would not
   recognise the other copy's declarations — a refusal to start, not a hole.
+- **A repeat that never reached Node.** The line count is of what Node parsed.
+  A proxy in front that already dropped the second `Authorization` line hands
+  over one line, which is one credential; one that *folds* the two hands over
+  `"Bearer a, Bearer b"`, which still reads as none.
 - **Anything after the guard runs.** A knob fence, a tenant check, an ownership
   check are the handler's.
 - **The method, if something upstream rewrote it.** `X-HTTP-Method-Override` is
@@ -330,6 +386,8 @@ There is deliberately no second copy of `kind`: a knob fence is
 | `createAuthorizer(config \| introspector)` | The framework-agnostic policy: `authorize({ method, requires, authorization })` |
 | `createLaneDeriver(config \| introspector)` | st-gateway's lane policy |
 | `createIntrospector(config)`, `splitScopes`, `bearerFrom`, `isSafeMethod` | The pieces underneath |
+| `soleAuthorizationLine(req)` | The value of the request's one raw `Authorization` line, or `null` for none, several, or a count that cannot be known. What callers of `createAuthorizer` and `createLaneDeriver` pass as the header |
+| `authorizationLines(req)` | How many `Authorization` lines a request carried, from `req.rawHeaders` and the header limit in force; `Infinity` when that cannot be known. Only `1` is a credential |
 | `loadIntrospectionConfig(env?)`, `IntrospectionConfigError` | Startup validation |
 | `MESSAGES`, `CREDENTIALS_IGNORED`, `SECRET_HEADER`, `ENV_URL`, `ENV_SECRET`, `DEFAULT_TIMEOUT_MS`, `DEFAULT_MAX_RESPONSE_BYTES` | Constants |
 
@@ -351,6 +409,7 @@ Rows are in evaluation order, and the first is first for a reason.
 | An **undeclared** route, on any method | `500` `this route declares no required scope` | **no** |
 | No `Authorization`, **safe** method declaring `"none"` | proceeds as a visitor, identity `null` | **no** |
 | `Authorization` that is not `Bearer <something>` | `401` `a bearer token is required` | **no** |
+| **Two or more** `Authorization` lines, any values, any name case — or a line count that cannot be known (header limit reached, no `rawHeaders`, a value no raw line carried) | read as **no** `Authorization`: the two rows either side of this one | **no** |
 | No `Authorization`, route declaring a session or a scope | `401` `a bearer token is required` | **no** |
 | `{"active": false}` | `401` `invalid or expired session`, on **every** method | yes |
 | Active, route declares `"session"` | proceeds, even with no scopes at all — `"scope":""` and no `scope` key alike (RFC 7662 makes it optional) | yes |
@@ -389,8 +448,11 @@ failed closed would take the public read surface down with auth-service.
 
 ```ts
 const deriver = createLaneDeriver({ ...config, timeoutMs: 250 });
-const lane = await deriver.derive(req.header("Authorization")); // "interactive" | "background"
+const lane = await deriver.derive(soleAuthorizationLine(req)); // "interactive" | "background"
 ```
+
+`soleAuthorizationLine(req)` in place of `req.header("Authorization")` is not
+optional: see the next section.
 
 **It awaits the center**, so a *hanging* one adds up to `timeoutMs` to every
 **credentialed** request the gateway proxies; anonymous requests are unaffected,
@@ -399,6 +461,62 @@ since nothing to introspect keeps the center off the hot path of the public map.
 reasonably pass less — **250 ms is the recommendation for st-gateway**, for the
 reason given in the migration section — and a test bounds the elapsed time
 against a stub that never answers.
+
+### Two `Authorization` lines — outside the adapter
+
+`createAuthorizer().authorize({ authorization })` and `createLaneDeriver().derive()`
+take one header **value**, and a value cannot show that the request carried
+two lines: Node has already kept the first and thrown the second away. Handed
+`req.header("Authorization")` for `Bearer a` + `Bearer b`, they read
+`"Bearer a"` — a well-formed credential the caller picked by putting it first.
+The Express adapter counts the lines itself (P7); anything calling these two
+directly passes `soleAuthorizationLine(req)`, which is the one raw line's
+value, or `null` unless there is exactly one:
+
+```ts
+import {
+  authorizationLines,
+  bearerFrom,
+  createLaneDeriver,
+  soleAuthorizationLine,
+} from "@v-m-pioneer-trading/introspection-client";
+
+// What Node hands a handler for `Authorization: Bearer a` + `authorization: Bearer b`.
+const rawHeaders = ["Host", "localhost", "Authorization", "Bearer a", "authorization", "Bearer b"];
+const parsed = "Bearer a"; // req.header("Authorization"): the second line is gone
+
+if (bearerFrom(parsed) !== "a") throw new Error("the parsed value alone is one credential");
+if (authorizationLines({ rawHeaders }) !== 2) throw new Error("the raw lines are two");
+
+// Uncountable is never one: no rawHeaders, or a list that reached the limit.
+if (authorizationLines({} as never) !== Infinity) throw new Error("missing is not one line");
+const filled = ["Authorization", "Bearer a", ...Array<string>(2000).fill("x")];
+if (authorizationLines({ rawHeaders: filled }) !== Infinity) throw new Error("the limit");
+
+// One line: its value, read from rawHeaders — not from req.headers, which a
+// middleware may have rewritten.
+if (soleAuthorizationLine({ rawHeaders: ["Authorization", "Bearer a"] }) !== "Bearer a") {
+  throw new Error("one line is its own value");
+}
+if (soleAuthorizationLine({ rawHeaders }) !== null) throw new Error("two lines are none");
+
+// So this goes in front of the call, on the real request — the request, not
+// its rawHeaders, because the header limit lives on req.socket:
+const lane = await createLaneDeriver(config).derive(soleAuthorizationLine(req)); // null is "background", no center call
+```
+
+`authorizationLines` compares names case-insensitively, counts names only (a
+header whose *value* reads `authorization` is not a line), and counts an empty
+`Authorization:` line like any other: `Bearer b` behind an empty first line
+is two lines, not a credential. It answers `Infinity` — never a number that
+could read as one — when the count cannot be known: `rawHeaders` missing,
+odd-length or carrying a non-string name or value, or grown to the header
+limit in force (P7), where a second line could have been dropped. An empty
+list is `0`: no line, no credential. `soleAuthorizationLine` is the same count
+with the value attached, and answers `null` for everything but one. `null`
+then means what it means everywhere —
+`401 a bearer token is required` where a session is needed, a visitor or the
+`background` lane where it is not, and no call to the center.
 
 ### Security notes
 
@@ -420,11 +538,13 @@ against a stub that never answers.
   `"Bearer "`, `"Bearer abc def"` and a value carrying two credentials
   (`"Bearer a, Bearer b"`, as a proxy that folds a repeated header produces)
   all read as *no credential*. Two `Authorization` **request headers** do not
-  produce that value and never did: `Authorization` is single-valued to Node's
-  parser, which discards the repeat, so `req.header("Authorization")` is the
-  **first** line and that one credential is verified normally. An earlier
-  revision of this file claimed the opposite; the behaviour is unchanged and
-  the real wire behaviour is now pinned by a raw-socket test.
+  produce that value: `Authorization` is single-valued to Node's parser, which
+  discards the repeat, so `req.header("Authorization")` is the **first** line.
+  Up to 1.1.1 the adapter verified that first line, letting a caller choose
+  which of two credentials was checked; it now counts `rawHeaders` and reads
+  two lines as no credential (P7), including a second line hidden past Node's
+  header-count limit. Both the parser's behaviour and the adapter's answer are
+  pinned by raw-socket tests against real Express.
 - **A guard that cannot do its job fails closed.** An injected introspector that
   rejects or throws calls `next(error)` — never bare `next()`, which would run
   the handler the guard just failed to authorize.
@@ -450,11 +570,13 @@ would prove nothing about what `secured()` does with it.
 CI additionally packs the tarball, installs it into a scratch project and
 typechecks two probes with `skipLibCheck: false` — one without
 `@types/express` (the core claim), one with a real Express app (the adapter
-claim) — then proves two things against the **packed** tarball at runtime,
-because a typecheck cannot see either: the registration rules (including that
-a `notFound()` is refused on a path or alongside another handler), and the
+claim) — then proves three things against the **packed** tarball at runtime,
+because a typecheck cannot see them: the registration rules (including that
+a `notFound()` is refused on a path or alongside another handler), the
 generated-router mount answering live requests as the migration section
-promises.
+promises, and two `Authorization` lines written to a raw socket — adjacent, or
+the second hidden behind 1100 filler lines — reading as no credential with no
+call to the center.
 
 **Re-vendoring the fixture.** `meta` owns it and this repository holds a copy so
 drift shows in a diff, so change `meta` first; the exact commands and the

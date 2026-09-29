@@ -404,3 +404,160 @@ jobs:
           });
           JS
           node runtime-generated.js
+
+      # Two `Authorization` lines, written to a raw socket, because no HTTP
+      # client will send them: fetch, http.request and supertest all fold or
+      # replace a repeated header. Node's parser keeps the first line and drops
+      # the second, so an adapter reading `req.headers` alone verifies whichever
+      # credential the caller put first. Proven from the packed tarball against
+      # real Express, with a center that would call both tokens valid, so any
+      # request that reached it would succeed and every call is counted.
+      - name: Prove two Authorization lines are no credential, from the tarball
+        run: |
+          cd /tmp/consumer
+          npm install --no-save express@4 > /dev/null
+          cat > runtime-authorization-lines.js <<'JS'
+          const http = require('node:http');
+          const net = require('node:net');
+          const express = require('express');
+          const {
+            actorOf,
+            authorizationLines,
+            createExpressAuth,
+            createLaneDeriver,
+            secured,
+            soleAuthorizationLine,
+          } = require('@v-m-pioneer-trading/introspection-client');
+
+          const ACTIVE = (sub) => ({
+            active: true, sub, kind: 'operator', scope: 'fleet:control', exp: 4102444800,
+          });
+          const TOKENS = { 'a.token': ACTIVE('user_a'), 'b.token': ACTIVE('user_b') };
+          let centerCalls = 0;
+          const center = http.createServer((req, res) => {
+            const chunks = [];
+            req.on('data', (c) => chunks.push(c));
+            req.on('end', () => {
+              centerCalls += 1;
+              const token = new URLSearchParams(Buffer.concat(chunks).toString()).get('token');
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(TOKENS[token] ?? { active: false }));
+            });
+          });
+
+          const fail = (message) => { console.error('::error::' + message); process.exitCode = 1; };
+
+          const raw = (port, method, path, lines) => new Promise((resolve, reject) => {
+            const socket = net.connect(port, '127.0.0.1', () => {
+              socket.write([
+                method + ' ' + path + ' HTTP/1.1', 'Host: localhost', ...lines,
+                ...(method === 'POST' ? ['Content-Length: 0'] : []),
+                'Connection: close', '', '',
+              ].join('\r\n'));
+            });
+            let received = '';
+            socket.setEncoding('utf8');
+            socket.on('data', (c) => { received += c; });
+            socket.on('error', reject);
+            socket.on('end', () => {
+              const [head, ...rest] = received.split('\r\n\r\n');
+              resolve({ status: Number(/^HTTP\/1\.1 (\d{3})/.exec(head)[1]), body: rest.join('\r\n\r\n') });
+            });
+          });
+
+          center.listen(0, '127.0.0.1', async () => {
+            const auth = createExpressAuth({
+              url: 'http://127.0.0.1:' + center.address().port + '/auth/v1/introspect',
+              secret: 'runtime-proof-secret',
+            });
+            const whoami = (_req, res) => res.json({ actor: actorOf(res) });
+            const api = secured(express.Router());
+            api.post('/scoped', auth.requireScope('fleet:control'), whoami);
+            api.get('/public', auth.allowPublic(), whoami);
+            api.get('/health', auth.ignoreCredentials(), whoami);
+            const app = express();
+            app.use('/api', api);
+            // st-gateway's shape: the README's recipe in front of the deriver.
+            const deriver = createLaneDeriver({
+              url: 'http://127.0.0.1:' + center.address().port + '/auth/v1/introspect',
+              secret: 'runtime-proof-secret',
+            });
+            app.get('/lane', (req, res) => {
+              deriver.derive(soleAuthorizationLine(req)).then((lane) => res.json({ lane }));
+            });
+            const server = app.listen(0, '127.0.0.1');
+            await new Promise((r) => server.once('listening', r));
+            const port = server.address().port;
+
+            const expect = async (what, method, path, lines, status, body, calls) => {
+              const before = centerCalls;
+              const got = await raw(port, method, path, lines);
+              const made = centerCalls - before;
+              if (got.status !== status) fail(what + ': expected ' + status + ', got ' + got.status);
+              else if (body !== undefined && got.body !== body) fail(what + ': expected body ' + body + ', got ' + got.body);
+              else if (made !== calls) fail(what + ': expected ' + calls + ' center call(s), got ' + made);
+              else console.log('  ok  ' + what + ' -> ' + got.status + ', ' + made + ' center call(s)');
+            };
+
+            const two = ['Authorization: Bearer a.token', 'Authorization: Bearer b.token'];
+            const noToken = '{"error":{"message":"a bearer token is required"}}';
+            await expect('two lines, scoped POST', 'POST', '/api/scoped', two, 401, noToken, 0);
+            await expect('two lines, allowPublic GET', 'GET', '/api/public', two, 200, '{"actor":null}', 0);
+            await expect('two lines, ignoreCredentials GET', 'GET', '/api/health', two, 200, '{"actor":null}', 0);
+            await expect('bearer then empty, scoped POST', 'POST', '/api/scoped',
+              ['Authorization: Bearer a.token', 'Authorization: '], 401, noToken, 0);
+            await expect('empty then bearer, scoped POST', 'POST', '/api/scoped',
+              ['Authorization: ', 'Authorization: Bearer b.token'], 401, noToken, 0);
+            await expect('empty then bearer, allowPublic GET', 'GET', '/api/public',
+              ['Authorization: ', 'Authorization: Bearer b.token'], 200, '{"actor":null}', 0);
+            await expect('two lowercase lines, scoped POST', 'POST', '/api/scoped',
+              ['authorization: Bearer a.token', 'authorization: Bearer b.token'], 401, noToken, 0);
+            await expect('one line, scoped POST', 'POST', '/api/scoped',
+              ['Authorization: Bearer a.token'], 200, '{"actor":"user_a"}', 1);
+            await expect('one lowercase line, scoped POST', 'POST', '/api/scoped',
+              ['authorization: Bearer b.token'], 200, '{"actor":"user_b"}', 1);
+            await expect('three lines, scoped POST', 'POST', '/api/scoped',
+              ['Authorization: Bearer a.token', 'Authorization: Bearer b.token', 'Authorization: Bearer a.token'],
+              401, noToken, 0);
+
+            // Past 2 x maxHeadersCount header entries (2000 by default) Node 22
+            // answers 431 before any handler runs, while Node 25 hands the app
+            // a TRUNCATED rawHeaders in which a second line behind ~1000
+            // fillers is not there to count. The library reads the limit off
+            // the server and refuses at it, so on either version the center is
+            // never asked: accept 431 (parser refused) or the app's own answer.
+            const pastLimit = async (what, method, path, lines, status, body) => {
+              const before = centerCalls;
+              const got = await raw(port, method, path, lines);
+              const made = centerCalls - before;
+              if (made !== 0) fail(what + ': expected 0 center calls, got ' + made);
+              else if (got.status === 431) console.log('  ok  ' + what + ' -> 431 from the parser, 0 center calls');
+              else if (got.status !== status) fail(what + ': expected ' + status + ' or 431, got ' + got.status);
+              else if (got.body !== body) fail(what + ': expected body ' + body + ', got ' + got.body);
+              else console.log('  ok  ' + what + ' -> ' + got.status + ', 0 center calls');
+            };
+            const hidden = ['Authorization: Bearer a.token', ...Array(1100).fill('x: 1'), 'Authorization: Bearer b.token'];
+            await pastLimit('second line behind 1100 fillers, scoped POST', 'POST', '/api/scoped', hidden, 401, noToken);
+            await pastLimit('second line behind 1100 fillers, allowPublic GET', 'GET', '/api/public', hidden, 200, '{"actor":null}');
+            await pastLimit('second line behind 1100 fillers, lane recipe', 'GET', '/lane', hidden, 200, '{"lane":"background"}');
+            await expect('one line, lane recipe', 'GET', '/lane',
+              ['Authorization: Bearer a.token'], 200, '{"lane":"interactive"}', 1);
+
+            if (authorizationLines({ rawHeaders: ['authorization', 'x', 'Authorization', ''] }) !== 2) {
+              fail('authorizationLines is not exported, or does not count case-insensitively');
+            }
+            if (authorizationLines({}) !== Infinity) {
+              fail('authorizationLines reads a request with no rawHeaders as countable');
+            }
+            if (soleAuthorizationLine({ rawHeaders: ['Authorization', 'Bearer a'] }) !== 'Bearer a'
+                || soleAuthorizationLine({ rawHeaders: ['Authorization', 'a', 'authorization', 'b'] }) !== null) {
+              fail('soleAuthorizationLine is not exported, or does not return the one raw line');
+            }
+
+            server.close();
+            center.close();
+            if (process.exitCode) console.error('::error::the tarball verifies one of two Authorization lines');
+            else console.log('two Authorization lines are no credential, from the tarball');
+          });
+          JS
+          node runtime-authorization-lines.js

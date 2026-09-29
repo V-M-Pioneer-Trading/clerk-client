@@ -19,6 +19,17 @@ import type { IntrospectionConfig, Lane } from "./types";
 
 /** Picks a queue lane for one inbound request. Never rejects it. */
 export interface LaneDeriver {
+  /**
+   * `authorizationHeader` is one header VALUE, so it cannot show that the
+   * request carried two `Authorization` lines — Node keeps the first and drops
+   * the rest. The caller hands over the one raw line, or `null`:
+   *
+   * ```ts
+   * deriver.derive(soleAuthorizationLine(req));
+   * ```
+   *
+   * Without it a caller picks which of two credentials decides the lane.
+   */
   derive(authorizationHeader: string | null | undefined): Promise<Lane>;
 }
 

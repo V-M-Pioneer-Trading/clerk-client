@@ -3,8 +3,9 @@
  *
  * Three entry points, deliberately separate:
  *
- * - {@link createAuthorizer} — the framework-agnostic policy, the thirty-seven
- *   calling-service cases of `meta/fixtures/introspection.json`.
+ * - {@link createAuthorizer} — the framework-agnostic policy, the forty
+ *   calling-service cases of `meta/fixtures/introspection.json`, given a
+ *   caller that applies {@link soleAuthorizationLine}.
  * - {@link createExpressAuth} — the Express 4 adapter over it, whose
  *   declarations live at route registration so Express's own matcher binds
  *   them, and whose {@link secured} wrapper refuses **at startup** to register
@@ -25,8 +26,14 @@ export type {
 export type { CenterAnswer, Introspector } from "./center";
 export { createIntrospector, splitScopes } from "./center";
 
-export type { Authorizer, InboundRequest } from "./core";
-export { bearerFrom, createAuthorizer, isSafeMethod } from "./core";
+export type { Authorizer, InboundRequest, RawHeaderSource } from "./core";
+export {
+  authorizationLines,
+  bearerFrom,
+  createAuthorizer,
+  isSafeMethod,
+  soleAuthorizationLine,
+} from "./core";
 
 export type { LaneDeriver } from "./gateway";
 export { createLaneDeriver } from "./gateway";

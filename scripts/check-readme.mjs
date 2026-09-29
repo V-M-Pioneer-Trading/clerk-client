@@ -122,6 +122,8 @@ const PRELUDE_NAMES = [
   "config",
   "req",
   "actorOf",
+  "authorizationLines",
+  "soleAuthorizationLine",
   "identityOf",
   "kindOf",
   "hasScope",

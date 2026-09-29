@@ -47,7 +47,12 @@ export interface FixtureCase {
   readonly name: string;
   readonly why: string;
   readonly route?: { readonly method: string; readonly requires: string };
-  readonly request: { readonly authorization: string | null };
+  /**
+   * Version 4: a string (one `Authorization` line), null (none), or an array
+   * of two or more strings, one per header line in the order sent. Read it
+   * through {@link authorizationShape}, which refuses anything else.
+   */
+  readonly request: { readonly authorization: unknown };
   readonly center: Record<string, unknown>;
   readonly expect: Record<string, unknown>;
 }
@@ -102,6 +107,33 @@ export const assertKnownExpectKeys = (
       );
     }
   }
+};
+
+/** A case's `request.authorization`, in one of the shapes version 4 allows. */
+export type AuthorizationShape =
+  | { readonly kind: "value"; readonly value: string | null }
+  | { readonly kind: "lines"; readonly lines: readonly string[] };
+
+/**
+ * Classify `request.authorization`, and throw on any shape this suite cannot
+ * send. An array of fewer than two lines, a non-string line, a number or an
+ * object is not something the fixture defines; running it as "no header"
+ * would be a case quietly checking less.
+ */
+export const authorizationShape = (testCase: FixtureCase): AuthorizationShape => {
+  const value = testCase.request.authorization;
+  if (value === null || typeof value === "string") return { kind: "value", value };
+  if (
+    Array.isArray(value) &&
+    value.length >= 2 &&
+    value.every((line) => typeof line === "string")
+  ) {
+    return { kind: "lines", lines: value as string[] };
+  }
+  throw new Error(
+    `${testCase.name}: unknown request.authorization shape ${JSON.stringify(value)} — ` +
+      "expected a string, null, or an array of two or more strings"
+  );
 };
 
 /**

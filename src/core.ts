@@ -1,8 +1,9 @@
 /**
  * @file The policy, with no framework anywhere near it.
  *
- * This is the thirty-seven calling-service cases of
- * `meta/fixtures/introspection.json` and nothing else. The Express adapter is
+ * This is the calling-service cases of `meta/fixtures/introspection.json` and
+ * nothing else — all forty, the three with two `Authorization` lines once the
+ * caller has counted them (see {@link soleAuthorizationLine}). The Express adapter is
  * a thin translation on top; a `mux` wrapper or a servlet filter would be
  * another. What is fixed is the answer, the request to the center and the call
  * count — everything the fixture can observe from outside.
@@ -50,7 +51,11 @@ export interface InboundRequest {
   readonly method: string;
   /** What the route declares it needs. */
   readonly requires: RouteRequirement;
-  /** The raw `Authorization` header, or null/undefined when absent. */
+  /**
+   * The raw `Authorization` header, or null/undefined when absent — and null
+   * unless the request carried exactly one `Authorization` line, which this
+   * string cannot show: pass {@link soleAuthorizationLine}'s answer.
+   */
   readonly authorization?: string | null;
 }
 
@@ -76,15 +81,20 @@ export interface InboundRequest {
  *   credential. Picking one of them would let a caller choose which of two
  *   credentials a service verifies.
  *
- * **Two `Authorization` request headers do not produce that value.** Node's
- * parser does not join repeats of `Authorization`: it is on the list of
- * single-value headers it discards duplicates of, so `req.headers.authorization`
- * — and therefore `req.header("Authorization")` — is the **first** line and the
- * second is dropped before any of this runs. Verified on the wire in
- * `credential.test.ts` rather than assumed. The joined shape is still handled
- * here because a proxy or a framework may fold one, and an array (the shape a
- * framework may hand back for a repeated header) is joined the way Node joins
- * a repeatable header and then fails the same count check.
+ * **Two `Authorization` request headers do not produce that value, and this
+ * function cannot see them.** Node's parser does not join repeats of
+ * `Authorization`: it is on the list of single-value headers it discards
+ * duplicates of, so `req.headers.authorization` — and therefore
+ * `req.header("Authorization")` — is the **first** line and the second is
+ * dropped before any of this runs. Handed that value, this function reads the
+ * first credential as a credential. The line count has to be taken from the
+ * request's raw headers **before** the value gets here: see
+ * {@link soleAuthorizationLine}, which the Express adapter applies and a caller
+ * of {@link createAuthorizer} or `createLaneDeriver` must apply itself. Verified
+ * on the wire in `credential.test.ts` rather than assumed. The joined shape is
+ * still handled here because a proxy or a framework may fold one, and an array
+ * (the shape a framework may hand back for a repeated header) is joined the
+ * way Node joins a repeatable header and then fails the same count check.
  */
 export const bearerFrom = (
   header: string | readonly string[] | null | undefined
@@ -103,6 +113,170 @@ export const bearerFrom = (
   // that survival is proven equivalence rather than a missing test. It stays
   // because it is the invariant the NEXT edit to the split would break.
   return token.length > 0 ? token : null;
+};
+
+/**
+ * What {@link authorizationLines} and {@link soleAuthorizationLine} read off a
+ * request: Node's `rawHeaders`, and the socket, for the header-count limit in
+ * force on it. A Node `IncomingMessage` and an Express `Request` both satisfy
+ * it without a cast.
+ */
+export interface RawHeaderSource {
+  /** Every header line as parsed, alternating name and value. */
+  readonly rawHeaders: readonly string[];
+  /**
+   * The connection. `socket.parser.maxHeaderPairs` and
+   * `socket.server.maxHeadersCount` are read if present, and only those;
+   * typed `unknown` so nothing here names a Node type.
+   */
+  readonly socket?: unknown;
+}
+
+/** Node's header-entry limit when `server.maxHeadersCount` is left unset. */
+const NODE_DEFAULT_RAW_HEADER_ENTRIES = 2000;
+
+/** `value[key]` when `value` is an object, else undefined. */
+const field = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
+
+/**
+ * The header-entry limit in force for this request, or `Infinity` when there
+ * is none. Past it Node 22 answers 431 before any handler runs and Node 25
+ * hands the app a truncated `rawHeaders`; the second is why this is read at
+ * all.
+ *
+ * Two readings, and the **stricter** wins:
+ *
+ * - `socket.server.maxHeadersCount`, with Node's own arithmetic: a number
+ *   becomes `maxHeadersCount << 1` entries and a result `<= 0` (a `0`, a
+ *   negative, a `NaN`) means no limit; unset, `null` or no server visible is
+ *   Node's default of 2000 entries.
+ * - `socket.parser.maxHeaderPairs`, the value actually in force. Node copies
+ *   the server's setting into the parser **once per connection**, so a
+ *   `maxHeadersCount` changed after a keep-alive connection opened is not
+ *   what that connection's parser enforces: lifting it to `0` mid-connection
+ *   would otherwise make this read "no limit" while the parser still
+ *   truncates at 2000. The parser is internal to Node, so only a positive
+ *   number is used; a missing or non-numeric field is "unknown", and the
+ *   server's reading stands alone.
+ *
+ * Neither reading is a guarantee when both are invisible — a request double,
+ * a socket that is not Node's — and then Node's default is assumed. That is
+ * right for an unconfigured server and for any server with a HIGHER limit
+ * (which only has its larger requests refused), but a server with a LOWER
+ * limit that this function cannot see would truncate below it. Real Node
+ * requests always carry both, so this only matters for a caller that builds
+ * its own `RawHeaderSource`.
+ */
+const rawHeaderEntryCap = (socket: unknown): number => {
+  const max = field(field(socket, "server"), "maxHeadersCount");
+  let cap: number;
+  if (typeof max !== "number") {
+    cap = NODE_DEFAULT_RAW_HEADER_ENTRIES;
+  } else {
+    const entries = max << 1;
+    cap = entries <= 0 ? Number.POSITIVE_INFINITY : entries;
+  }
+  const inForce = field(field(socket, "parser"), "maxHeaderPairs");
+  if (typeof inForce === "number" && Number.isFinite(inForce) && inForce > 0) {
+    cap = Math.min(cap, inForce);
+  }
+  return cap;
+};
+
+/**
+ * One pass over `rawHeaders`: how many `Authorization` lines, and the value
+ * of the first — or `Infinity` lines when the count cannot be known.
+ */
+const scanAuthorization = (
+  request: RawHeaderSource
+): { readonly lines: number; readonly first: string | null } => {
+  const unknowable = { lines: Number.POSITIVE_INFINITY, first: null };
+  const rawHeaders: unknown =
+    typeof request === "object" && request !== null ? request.rawHeaders : undefined;
+  if (!Array.isArray(rawHeaders) || rawHeaders.length % 2 !== 0) return unknowable;
+  if (rawHeaders.length >= rawHeaderEntryCap(request.socket)) return unknowable;
+  let lines = 0;
+  let first: string | null = null;
+  // Names sit at even indices. Stepping by one would count a VALUE that
+  // happens to read "authorization" as a line.
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const name: unknown = rawHeaders[index];
+    if (typeof name !== "string") return unknowable;
+    if (name.toLowerCase() !== "authorization") continue;
+    const value: unknown = rawHeaders[index + 1];
+    if (typeof value !== "string") return unknowable;
+    if (lines === 0) first = value;
+    lines += 1;
+  }
+  return { lines, first };
+};
+
+/**
+ * How many `Authorization` lines a request carried, counted from Node's
+ * `rawHeaders` (alternating name, value; names in whatever case the client
+ * sent them, so compared case-insensitively) — or `Infinity` when the count
+ * cannot be known.
+ *
+ * **Exactly one is a credential; anything else is not.** More than one,
+ * whatever the values are — two well-formed bearers, a bearer and an empty
+ * line, an empty line and a bearer — because Node's parser keeps the *first*
+ * `Authorization` line and silently discards the rest, so
+ * `req.headers.authorization` alone lets a caller choose which of two
+ * credentials gets verified by choosing their order, or with an empty first
+ * line turn a credentialed request into an anonymous one. `rawHeaders` is the
+ * only place the repeat is still visible. **Zero** is no credential either,
+ * whatever `req.headers.authorization` says: nothing on the wire carried it.
+ *
+ * **`Infinity` means "unknowable", and it never reads as one line:**
+ *
+ * - `rawHeaders` is not an array, has an odd length, or holds a non-string
+ *   name or `Authorization` value. There is nothing trustworthy to count.
+ * - `rawHeaders` has reached the header limit in force, `2 × maxHeadersCount`
+ *   entries — 2000 by default, roughly five kilobytes of `x:1` filler, far
+ *   under `maxHeaderSize`. Past it Node 22 answers `431` before any handler
+ *   runs, but Node 25 hands the app a TRUNCATED `rawHeaders` (which overshoots
+ *   to 2046 entries, while `headers` stops at 2000), so a second
+ *   `Authorization` line sent after the filler is simply not there to count.
+ *   Reading the limit off the connection makes the check the same on every
+ *   version. Lines are recorded in batches, so a request at the limit cannot
+ *   be told from one that went past it, and both are refused.
+ *   `server.maxHeadersCount = 0`, set before the first connection, lifts the
+ *   limit and this check with it.
+ *
+ * The Express adapter applies this itself. Anything that hands a header value
+ * to {@link createAuthorizer} or to `createLaneDeriver` directly should use
+ * {@link soleAuthorizationLine}, which applies this count and returns the
+ * value from the same list.
+ *
+ * It takes the request rather than its `rawHeaders` because the limit lives
+ * on the connection, and a caller handed only the array could not know it.
+ */
+export const authorizationLines = (request: RawHeaderSource): number =>
+  scanAuthorization(request).lines;
+
+/**
+ * The value of the request's one `Authorization` line, taken from
+ * `rawHeaders` itself — or `null` when there is not exactly one countable
+ * line (none, several, or a count that cannot be known: see
+ * {@link authorizationLines}).
+ *
+ * The count and the value come from the same list, so nothing that rewrote
+ * `req.headers.authorization` in the process — a middleware, a test helper —
+ * is ever what gets verified. The value may be `""` for an empty line, which
+ * `bearerFrom` then reads as no credential.
+ *
+ * This is the recipe for anything that is not the Express adapter:
+ *
+ * ```ts
+ * const lane = await deriver.derive(soleAuthorizationLine(req));
+ * ```
+ */
+export const soleAuthorizationLine = (request: RawHeaderSource): string | null => {
+  const { lines, first } = scanAuthorization(request);
+  return lines === 1 ? first : null;
 };
 
 const reject = (

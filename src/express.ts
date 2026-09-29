@@ -69,7 +69,7 @@ import { METHODS } from "node:http";
 import type { CenterAnswer, Introspector } from "./center";
 import { createIntrospector } from "./center";
 import type { Authorizer } from "./core";
-import { createAuthorizer, isSafeMethod } from "./core";
+import { createAuthorizer, isSafeMethod, soleAuthorizationLine } from "./core";
 import { MESSAGES } from "./messages";
 import type {
   Decision,
@@ -80,10 +80,10 @@ import type {
 } from "./types";
 
 /**
- * The part of an Express `Request` this adapter reads: the method, and one
- * header. Nothing else, because nothing else is safe to decide on — see the
- * file comment. A real `Request` satisfies it; declaring it locally keeps
- * `express` out of the public types.
+ * The part of an Express `Request` this adapter reads: the method, one header,
+ * and how many times that header was sent. Nothing else, because nothing else
+ * is safe to decide on — see the file comment. A real `Request` satisfies it;
+ * declaring it locally keeps `express` out of the public types.
  */
 export interface RequestLike {
   /** The HTTP method, as the framework parsed it. Never an override header. */
@@ -94,6 +94,27 @@ export interface RequestLike {
    * accepted here so a real `Request` is assignable without a cast.
    */
   header(name: string): string | string[] | undefined;
+  /**
+   * Node's `rawHeaders`: every header line as sent, alternating name and
+   * value. Read for one thing only — how many `Authorization` lines arrived,
+   * because Node keeps the first and discards the rest, so `header()` cannot
+   * tell one from two — and the value of that one line, so that what is
+   * counted and what is verified are the same bytes. See
+   * {@link soleAuthorizationLine}.
+   *
+   * Required rather than optional: a request double without it would
+   * otherwise be read as carrying exactly one line, which is the defect.
+   */
+  readonly rawHeaders: readonly string[];
+  /**
+   * The connection, read for the header-count limit in force on it
+   * (`socket.parser.maxHeaderPairs`, `socket.server.maxHeadersCount`) and
+   * nothing else: past that limit Node 25 hands over a truncated
+   * `rawHeaders` (Node 22 answers 431 instead), so a repeat can be missing
+   * from it. Optional because a double need not have
+   * one; without it Node's default limit is assumed.
+   */
+  readonly socket?: unknown;
 }
 
 /** The part of an Express `Response` this adapter writes. */
@@ -1015,10 +1036,9 @@ export function createExpressAuth(
       }
       stateOf(res).requires = requires;
 
-      // Node discards a repeated `Authorization` line and keeps the first, so
-      // what arrives here is one value; a comma-folded one carrying two
-      // credentials is read by `bearerFrom` as no credential at all.
-      const authorization = headerValue(req, "Authorization");
+      // The one place every declaration and every guard reads the header,
+      // so the line-count rule is the same for all of them.
+      const authorization = credentialOf(req);
 
       authorizerFor(res, authorization)
         .authorize({ method: req.method, requires, authorization })
@@ -1106,9 +1126,32 @@ export function createExpressAuth(
   };
 }
 
-/** One header as a single string, or null. An array is joined as Node joins. */
-const headerValue = (req: RequestLike, name: string): string | null => {
-  const value = req.header(name);
-  if (value === undefined) return null;
-  return Array.isArray(value) ? value.join(", ") : value;
-};
+/**
+ * The `Authorization` value this request may be authorized on, or null for
+ * **no credential** — which is every answer but exactly one raw line.
+ *
+ * Node's parser keeps the first `Authorization` line and discards any repeat,
+ * so `req.header("Authorization")` for `Bearer a` + `Bearer b` is `"Bearer a"`,
+ * and for an empty line + `Bearer b` it is `""`. Read on its own, that lets the
+ * caller choose which of two credentials is verified, or turn a credentialed
+ * request into a visitor. The spec's answer is that two lines are never a
+ * credential, whatever they hold — so the lines are counted in `rawHeaders`,
+ * the only place the repeat survives, and more than one is null: a `401 a
+ * bearer token is required` where a session is needed, a visitor on a public
+ * read, and no call to the center either way.
+ *
+ * A request whose lines cannot be counted — no `rawHeaders` array, or one
+ * that reached the server's header limit, where Node 25 truncates the list
+ * (Node 22 answers 431 before we run) and a second `Authorization` can be
+ * missing — is no credential too.
+ *
+ * With exactly one line, the value is **that line's value in `rawHeaders`**,
+ * never `req.header()`: the count and the credential come from the same list,
+ * so a middleware that rewrote `req.headers.authorization` changes neither.
+ * With zero lines there is no credential whatever `req.header()` answers —
+ * nothing on the wire carried it. Setting `req.headers.authorization` in the
+ * process is therefore not a way to authenticate a request; this adapter
+ * verifies what the caller sent. A comma-folded value carrying two
+ * credentials in one line is read by `bearerFrom` as none.
+ */
+const credentialOf = (req: RequestLike): string | null => soleAuthorizationLine(req);
