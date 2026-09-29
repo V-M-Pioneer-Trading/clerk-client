@@ -308,10 +308,17 @@ describe("three lines are not one either", () => {
 });
 
 /**
- * Node stops appending to `rawHeaders` (and `headers`) once it holds
- * `2 × server.maxHeadersCount` entries (2000 by default), so a second
- * `Authorization` line sent after ~1000 filler lines is not there to count.
- * Five kilobytes of `x: 1`, far under the 16 KiB `maxHeaderSize`.
+ * What Node does with a request past `2 × server.maxHeadersCount` header
+ * entries (2000 by default: ~1000 lines, five kilobytes of `x: 1`, far under
+ * the 16 KiB `maxHeaderSize`) depends on the version:
+ *
+ * - Node 22 (22.23, what `node:22-alpine` and CI run) answers `431 Request
+ *   Header Fields Too Large` itself, before any handler runs.
+ * - Node 25 (25.0) hands the app a TRUNCATED `rawHeaders` — 2046 entries at
+ *   1100 fillers — so a second `Authorization` line after the filler is
+ *   simply not there to count. That is the hole the limit check closes.
+ *
+ * Both are safe once the check exists; neither may ask the center.
  */
 const filler = (count: number): string[] => Array.from({ length: count }, () => "x: 1");
 const smuggled = (count: number): string[] => [
@@ -320,34 +327,44 @@ const smuggled = (count: number): string[] => [
   "Authorization: Bearer b.token",
 ];
 
+/**
+ * The invariant past the limit, on either Node: the center is never asked,
+ * AND either Node's parser refused the request (431, the app never ran —
+ * Node 22) or the app answered exactly `status`/`body` (Node 25, where the
+ * truncated list reaches the adapter and the limit check refuses it).
+ */
+const expectRefusedPastTheLimit = (
+  response: RawResponse,
+  status: number,
+  body: Record<string, unknown>
+): void => {
+  expect(asked).toEqual([]);
+  if (response.status === 431) return;
+  expect(response.status).toBe(status);
+  expect(response.body).toEqual(body);
+};
+
 describe("a second line hidden past Node's header limit", () => {
-  it("is refused on a scoped POST: 401, no center", async () => {
-    // Without the limit check this was 200 as user_a: rawHeaders held one
-    // Authorization line, because the second was never recorded.
+  it("is refused on a scoped POST: 401 or 431, no center", async () => {
+    // Without the limit check this was 200 as user_a on Node 25: rawHeaders
+    // held one Authorization line, because the second was never recorded.
     const response = await raw("POST", "/api/scoped", smuggled(1100));
-    expect(response.status).toBe(401);
-    expect(response.body).toEqual(missingToken);
-    expect(asked).toEqual([]);
+    expectRefusedPastTheLimit(response, 401, missingToken);
   });
 
-  it("is refused behind a router-level guard(): 401, no center", async () => {
+  it("is refused behind a router-level guard(): 401 or 431, no center", async () => {
     const response = await raw("GET", "/guarded/ships", smuggled(1100));
-    expect(response.status).toBe(401);
-    expect(asked).toEqual([]);
+    expectRefusedPastTheLimit(response, 401, missingToken);
   });
 
-  it("serves an allowPublic() read as a visitor, no center", async () => {
+  it("serves an allowPublic() read as a visitor or 431, no center", async () => {
     const response = await raw("GET", "/api/public", smuggled(1100));
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ actor: null });
-    expect(asked).toEqual([]);
+    expectRefusedPastTheLimit(response, 200, { actor: null });
   });
 
-  it("puts the README lane recipe in the background lane, no center", async () => {
+  it("puts the README lane recipe in the background lane or 431, no center", async () => {
     const response = await raw("GET", "/lane", smuggled(1100));
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ lane: "background" });
-    expect(asked).toEqual([]);
+    expectRefusedPastTheLimit(response, 200, { lane: "background" });
   });
 
   it("refuses even ONE line once the request reaches the limit", async () => {

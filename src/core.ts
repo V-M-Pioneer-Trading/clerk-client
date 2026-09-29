@@ -134,8 +134,9 @@ export interface RawHeaderSource {
 const NODE_DEFAULT_RAW_HEADER_ENTRIES = 2000;
 
 /**
- * How many `rawHeaders` entries Node will keep for this request before it
- * stops appending, or `Infinity` when it keeps them all.
+ * The server's header-entry limit for this request, or `Infinity` when it has
+ * none. Past it Node 22 answers 431 before any handler runs and Node 25 hands
+ * the app a truncated `rawHeaders`; the second is why this is read at all.
  *
  * Mirrors Node's own arithmetic: a numeric `server.maxHeadersCount` becomes
  * `maxHeadersCount << 1` entries, and a result `<= 0` (a `0`, a negative, a
@@ -177,14 +178,15 @@ const rawHeaderEntryCap = (socket: unknown): number => {
  *
  * - `rawHeaders` is not an array, has an odd length, or holds a non-string
  *   name. There is nothing trustworthy to count.
- * - `rawHeaders` has reached the server's header limit. Node stops appending
- *   to `rawHeaders` (and `headers`) once it holds `2 × maxHeadersCount`
+ * - `rawHeaders` has reached the server's header limit, `2 × maxHeadersCount`
  *   entries — 2000 by default, roughly five kilobytes of `x:1` filler, far
- *   under `maxHeaderSize` — so a second `Authorization` line sent after the
- *   filler is simply not there to count. It arrives in batches, so a request
- *   at the limit cannot be told from one that went past it, and both are
- *   refused. `server.maxHeadersCount = 0` lifts the limit and this check with
- *   it.
+ *   under `maxHeaderSize`. Past it Node 22 answers `431` before any handler
+ *   runs, but Node 25 hands the app a TRUNCATED `rawHeaders` (and `headers`),
+ *   so a second `Authorization` line sent after the filler is simply not there
+ *   to count. Reading the limit off the server makes the check the same on
+ *   every version. Lines are recorded in batches, so a request at the limit
+ *   cannot be told from one that went past it, and both are refused.
+ *   `server.maxHeadersCount = 0` lifts the limit and this check with it.
  *
  * The Express adapter applies this itself. Anything that hands a header value
  * to {@link createAuthorizer} or to `createLaneDeriver` directly takes it

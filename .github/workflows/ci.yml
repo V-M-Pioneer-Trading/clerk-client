@@ -520,13 +520,26 @@ jobs:
               ['Authorization: Bearer a.token', 'Authorization: Bearer b.token', 'Authorization: Bearer a.token'],
               401, noToken, 0);
 
-            // Node stops recording header lines at 2 x maxHeadersCount entries
-            // (2000 by default), so a second line behind ~1000 fillers is never
-            // counted unless the limit itself is checked.
+            // Past 2 x maxHeadersCount header entries (2000 by default) Node 22
+            // answers 431 before any handler runs, while Node 25 hands the app
+            // a TRUNCATED rawHeaders in which a second line behind ~1000
+            // fillers is not there to count. The library reads the limit off
+            // the server and refuses at it, so on either version the center is
+            // never asked: accept 431 (parser refused) or the app's own answer.
+            const pastLimit = async (what, method, path, lines, status, body) => {
+              const before = centerCalls;
+              const got = await raw(port, method, path, lines);
+              const made = centerCalls - before;
+              if (made !== 0) fail(what + ': expected 0 center calls, got ' + made);
+              else if (got.status === 431) console.log('  ok  ' + what + ' -> 431 from the parser, 0 center calls');
+              else if (got.status !== status) fail(what + ': expected ' + status + ' or 431, got ' + got.status);
+              else if (got.body !== body) fail(what + ': expected body ' + body + ', got ' + got.body);
+              else console.log('  ok  ' + what + ' -> ' + got.status + ', 0 center calls');
+            };
             const hidden = ['Authorization: Bearer a.token', ...Array(1100).fill('x: 1'), 'Authorization: Bearer b.token'];
-            await expect('second line behind 1100 fillers, scoped POST', 'POST', '/api/scoped', hidden, 401, noToken, 0);
-            await expect('second line behind 1100 fillers, allowPublic GET', 'GET', '/api/public', hidden, 200, '{"actor":null}', 0);
-            await expect('second line behind 1100 fillers, lane recipe', 'GET', '/lane', hidden, 200, '{"lane":"background"}', 0);
+            await pastLimit('second line behind 1100 fillers, scoped POST', 'POST', '/api/scoped', hidden, 401, noToken);
+            await pastLimit('second line behind 1100 fillers, allowPublic GET', 'GET', '/api/public', hidden, 200, '{"actor":null}');
+            await pastLimit('second line behind 1100 fillers, lane recipe', 'GET', '/lane', hidden, 200, '{"lane":"background"}');
             await expect('one line, lane recipe', 'GET', '/lane',
               ['Authorization: Bearer a.token'], 200, '{"lane":"interactive"}', 1);
 

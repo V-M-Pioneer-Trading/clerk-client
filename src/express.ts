@@ -106,8 +106,8 @@ export interface RequestLike {
   readonly rawHeaders: readonly string[];
   /**
    * The connection, read for `socket.server.maxHeadersCount` and nothing
-   * else: past that limit Node stops recording header lines, so a repeat can
-   * be missing from `rawHeaders`. Optional because a double need not have
+   * else: past that limit Node 25 hands over a truncated `rawHeaders` (Node 22
+   * answers 431 instead), so a repeat can be missing from it. Optional because a double need not have
    * one; without it Node's default limit is assumed.
    */
   readonly socket?: unknown;
@@ -1137,8 +1137,9 @@ export function createExpressAuth(
  * read, and no call to the center either way.
  *
  * A request whose lines cannot be counted — no `rawHeaders` array, or one
- * that reached the server's header limit, where Node stops recording lines
- * and a second `Authorization` can be missing — is no credential too.
+ * that reached the server's header limit, where Node 25 truncates the list
+ * (Node 22 answers 431 before we run) and a second `Authorization` can be
+ * missing — is no credential too.
  *
  * So is a request with **zero** raw lines whose `header()` still answers:
  * nothing on the wire carried that value, so something in the process put it

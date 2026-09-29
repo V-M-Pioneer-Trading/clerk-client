@@ -19,9 +19,10 @@ Part of V-M-Pioneer-Trading/meta#80.
   to `requireScope`, `requireSession`, `allowPublic` and `guard` alike;
   `ignoreCredentials()` still reads no header. Upgrade any service on 1.1.1 or
   earlier.
-- **A count that cannot be known is no credential either.** Node stops
-  recording header lines once `rawHeaders` holds `2 × server.maxHeadersCount`
-  entries (2000 by default, about five kilobytes of filler), so a second
+- **A count that cannot be known is no credential either.** Past
+  `2 × server.maxHeadersCount` header entries (2000 by default, about five
+  kilobytes of filler) Node 22 answers `431` before any handler runs, but
+  Node 25 hands the app a truncated `rawHeaders`, so there a second
   `Authorization` line sent after ~1000 filler lines was never counted and the
   first was verified. A request whose `rawHeaders` has reached the server's
   limit — read from `req.socket.server.maxHeadersCount` the way Node reads it;

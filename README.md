@@ -149,14 +149,18 @@ see the count, so its caller applies the rule; see
 [Two `Authorization` lines](#two-authorization-lines--outside-the-adapter).
 
 "Anything else" includes a count that cannot be known, and one way to make it
-unknowable is cheap. Node stops recording header lines — in `rawHeaders` and
-in `headers` alike — once it holds `2 × server.maxHeadersCount` entries: 2000
-by default, which is about a thousand lines, roughly five kilobytes of `x: 1`
-and far under the 16 KiB `maxHeaderSize`. A second `Authorization` line sent
-after that filler is simply not there to count. So a request whose
-`rawHeaders` has reached the server's limit is no credential, even with one
-line: Node records lines in batches, so a request at the limit cannot be told
-from one that went past it. The limit is read from
+unknowable is cheap. Node has a header-count limit of `2 × server.maxHeadersCount`
+entries: 2000 by default, which is about a thousand lines, roughly five
+kilobytes of `x: 1` and far under the 16 KiB `maxHeaderSize`. What happens
+past it depends on the version. Node 22 (what `node:22-alpine` runs) answers
+`431 Request Header Fields Too Large` before any handler runs; Node 25 hands
+the app a **truncated** `rawHeaders` — and `headers` — so a second
+`Authorization` line sent after the filler is simply not there to count. The
+check exists for the truncated list, and does not depend on which version is
+running: a request whose `rawHeaders` has reached the server's limit is no
+credential, even with one line, because lines are recorded in batches and a
+request at the limit cannot be told from one that went past it. The limit is
+read from
 `req.socket.server.maxHeadersCount` with Node's own arithmetic — a positive
 number is twice itself, `0` or less is no limit, unset is 2000 — so a server
 that sets `maxHeadersCount = 0` gets an exact count at any size. A request
