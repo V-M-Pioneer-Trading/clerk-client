@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.1.2 — 2026-09-26
+
+Security fix, plus one additive export. Conforms to `meta` fixture version 4.
+Part of V-M-Pioneer-Trading/meta#80.
+
+### Security
+
+- **Two `Authorization` lines let the caller pick which credential was
+  verified (present in 1.0.0 through 1.1.1).** Node's HTTP parser keeps the
+  first `Authorization` line and discards any repeat, and the adapter read
+  `req.header("Authorization")`, so `Bearer a` + `Bearer b` asked the center
+  about `a`, and an empty line + `Bearer b` was served as a visitor. The
+  adapter now counts `Authorization` lines in `req.rawHeaders`
+  (case-insensitively) and reads more than one, whatever they hold, as no
+  credential: `401 a bearer token is required` on session and scope routes, a
+  visitor on `allowPublic()` reads, and no call to the center. The rule applies
+  to `requireScope`, `requireSession`, `allowPublic` and `guard` alike;
+  `ignoreCredentials()` still reads no header. Upgrade any service on 1.1.1 or
+  earlier.
+
+### Added
+
+- `authorizationLines(rawHeaders)`: how many `Authorization` lines a request
+  carried. `createAuthorizer().authorize()` and `createLaneDeriver().derive()`
+  take one header value and cannot see a repeat, so their callers — st-gateway
+  above all — pass `null` when this is above one. The README shows the recipe.
+
+### Changed
+
+- **`RequestLike` gained a required `rawHeaders`.** A real Express `Request`
+  already has it, so code that hands the adapter real requests is unaffected; a
+  hand-written request double no longer typechecks until it adds one. At
+  runtime a request without a `rawHeaders` array is read as carrying no
+  credential, never as carrying one line.
+- Fixture version 4 vendored (meta `46c033e`, 40 + 12 cases); its four
+  two-line cases run as real separate header lines through real Express and
+  the lane recipe.
+
 ## 1.1.1 — 2026-09-23
 
 Bug fix, no API change. Part of V-M-Pioneer-Trading/meta#80 (step 6).

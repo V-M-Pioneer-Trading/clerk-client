@@ -24,7 +24,7 @@ URL, which `package-lock.json` records with an integrity hash, so the Docker
 build needs no token and no git.
 
 ```sh
-npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.1/v-m-pioneer-trading-introspection-client-1.1.1.tgz
+npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.2/v-m-pioneer-trading-introspection-client-1.1.2.tgz
 ```
 
 ## Quick start
