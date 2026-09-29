@@ -19,6 +19,7 @@ import express from "express";
 import {
   actorOf,
   authorizationLines,
+  soleAuthorizationLine,
   createAuthorizer,
   createExpressAuth,
   createLaneDeriver,
@@ -105,6 +106,7 @@ export const prelude = () => ({
   req,
   actorOf,
   authorizationLines,
+  soleAuthorizationLine,
   identityOf,
   kindOf,
   hasScope,

@@ -123,6 +123,7 @@ const PRELUDE_NAMES = [
   "req",
   "actorOf",
   "authorizationLines",
+  "soleAuthorizationLine",
   "identityOf",
   "kindOf",
   "hasScope",

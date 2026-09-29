@@ -154,20 +154,32 @@ entries: 2000 by default, which is about a thousand lines, roughly five
 kilobytes of `x: 1` and far under the 16 KiB `maxHeaderSize`. What happens
 past it depends on the version. Node 22 (what `node:22-alpine` runs) answers
 `431 Request Header Fields Too Large` before any handler runs; Node 25 hands
-the app a **truncated** `rawHeaders` — and `headers` — so a second
+the app **truncated** lists — `rawHeaders` overshoots to 2046 entries, being
+filled in batches, while `headers` stops at 2000 — so a second
 `Authorization` line sent after the filler is simply not there to count. The
 check exists for the truncated list, and does not depend on which version is
-running: a request whose `rawHeaders` has reached the server's limit is no
-credential, even with one line, because lines are recorded in batches and a
-request at the limit cannot be told from one that went past it. The limit is
-read from
-`req.socket.server.maxHeadersCount` with Node's own arithmetic — a positive
-number is twice itself, `0` or less is no limit, unset is 2000 — so a server
-that sets `maxHeadersCount = 0` gets an exact count at any size. A request
-with no `rawHeaders` to count, or with **zero** `Authorization` lines on the
-wire but a value in `req.header("Authorization")`, is no credential too:
-middleware that sets `req.headers.authorization` itself is **not supported**,
-because this adapter verifies what the caller sent.
+running: a request whose `rawHeaders` has reached the limit is no credential,
+even with one line, because lines are recorded in batches and a request at the
+limit cannot be told from one that went past it.
+
+The limit is read from the connection, and the **stricter** of two readings
+wins: `req.socket.server.maxHeadersCount`, with Node's own arithmetic (a
+positive number is twice itself, `0` or less is no limit, unset is 2000), and
+`req.socket.parser.maxHeaderPairs`, the value actually in force. Node copies
+the server's setting into a connection's parser **once, when the connection
+opens**, so set `maxHeadersCount` before the server accepts its first
+connection; a change made later does not reach connections already open, and
+because the adapter also reads the parser's own value, lifting the limit
+mid-connection cannot open a gap. A server with `maxHeadersCount = 0` from the
+start gets an exact count at any size.
+
+The credential is the value **of that one raw line**, taken from
+`rawHeaders` itself — never `req.header("Authorization")` — so the count and
+the value are the same bytes. A request with no `rawHeaders` to count, or
+with **zero** `Authorization` lines on the wire, is no credential whatever
+`req.headers.authorization` holds: middleware that sets or rewrites
+`req.headers.authorization` is **ignored**, because this adapter verifies what
+the caller sent.
 
 ### What this package does **not** protect
 
@@ -374,7 +386,8 @@ There is deliberately no second copy of `kind`: a knob fence is
 | `createAuthorizer(config \| introspector)` | The framework-agnostic policy: `authorize({ method, requires, authorization })` |
 | `createLaneDeriver(config \| introspector)` | st-gateway's lane policy |
 | `createIntrospector(config)`, `splitScopes`, `bearerFrom`, `isSafeMethod` | The pieces underneath |
-| `authorizationLines(req)` | How many `Authorization` lines a request carried, from `req.rawHeaders` and the server's header limit; `Infinity` when that cannot be known. Only `1` is a credential. For callers of `createAuthorizer` and `createLaneDeriver` |
+| `soleAuthorizationLine(req)` | The value of the request's one raw `Authorization` line, or `null` for none, several, or a count that cannot be known. What callers of `createAuthorizer` and `createLaneDeriver` pass as the header |
+| `authorizationLines(req)` | How many `Authorization` lines a request carried, from `req.rawHeaders` and the header limit in force; `Infinity` when that cannot be known. Only `1` is a credential |
 | `loadIntrospectionConfig(env?)`, `IntrospectionConfigError` | Startup validation |
 | `MESSAGES`, `CREDENTIALS_IGNORED`, `SECRET_HEADER`, `ENV_URL`, `ENV_SECRET`, `DEFAULT_TIMEOUT_MS`, `DEFAULT_MAX_RESPONSE_BYTES` | Constants |
 
@@ -435,11 +448,11 @@ failed closed would take the public read surface down with auth-service.
 
 ```ts
 const deriver = createLaneDeriver({ ...config, timeoutMs: 250 });
-const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
-const lane = await deriver.derive(header); // "interactive" | "background"
+const lane = await deriver.derive(soleAuthorizationLine(req)); // "interactive" | "background"
 ```
 
-The line-count guard in front of `derive` is not optional: see the next section.
+`soleAuthorizationLine(req)` in place of `req.header("Authorization")` is not
+optional: see the next section.
 
 **It awaits the center**, so a *hanging* one adds up to `timeoutMs` to every
 **credentialed** request the gateway proxies; anonymous requests are unaffected,
@@ -457,13 +470,15 @@ two lines: Node has already kept the first and thrown the second away. Handed
 `req.header("Authorization")` for `Bearer a` + `Bearer b`, they read
 `"Bearer a"` — a well-formed credential the caller picked by putting it first.
 The Express adapter counts the lines itself (P7); anything calling these two
-directly counts them first and passes `null` unless there is exactly one:
+directly passes `soleAuthorizationLine(req)`, which is the one raw line's
+value, or `null` unless there is exactly one:
 
 ```ts
 import {
   authorizationLines,
   bearerFrom,
   createLaneDeriver,
+  soleAuthorizationLine,
 } from "@v-m-pioneer-trading/introspection-client";
 
 // What Node hands a handler for `Authorization: Bearer a` + `authorization: Bearer b`.
@@ -478,10 +493,16 @@ if (authorizationLines({} as never) !== Infinity) throw new Error("missing is no
 const filled = ["Authorization", "Bearer a", ...Array<string>(2000).fill("x")];
 if (authorizationLines({ rawHeaders: filled }) !== Infinity) throw new Error("the limit");
 
-// So the rule goes in front of the call, on the real request — the request,
-// not its rawHeaders, because the header limit lives on req.socket.server:
-const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
-const lane = await createLaneDeriver(config).derive(header); // null is "background", no center call
+// One line: its value, read from rawHeaders — not from req.headers, which a
+// middleware may have rewritten.
+if (soleAuthorizationLine({ rawHeaders: ["Authorization", "Bearer a"] }) !== "Bearer a") {
+  throw new Error("one line is its own value");
+}
+if (soleAuthorizationLine({ rawHeaders }) !== null) throw new Error("two lines are none");
+
+// So this goes in front of the call, on the real request — the request, not
+// its rawHeaders, because the header limit lives on req.socket:
+const lane = await createLaneDeriver(config).derive(soleAuthorizationLine(req)); // null is "background", no center call
 ```
 
 `authorizationLines` compares names case-insensitively, counts names only (a
@@ -489,9 +510,11 @@ header whose *value* reads `authorization` is not a line), and counts an empty
 `Authorization:` line like any other: `Bearer b` behind an empty first line
 is two lines, not a credential. It answers `Infinity` — never a number that
 could read as one — when the count cannot be known: `rawHeaders` missing,
-odd-length or carrying a non-string name, or grown to the server's header
-limit (P7), where a second line could have been dropped. Compare with
-`=== 1`, not `<= 1` or `!== 2`. `null` then means what it means everywhere —
+odd-length or carrying a non-string name or value, or grown to the header
+limit in force (P7), where a second line could have been dropped. An empty
+list is `0`: no line, no credential. `soleAuthorizationLine` is the same count
+with the value attached, and answers `null` for everything but one. `null`
+then means what it means everywhere —
 `401 a bearer token is required` where a session is needed, a visitor or the
 `background` lane where it is not, and no call to the center.
 

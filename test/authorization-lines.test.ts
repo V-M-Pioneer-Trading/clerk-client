@@ -26,8 +26,8 @@ import {
   authorizationLines,
   createExpressAuth,
   createLaneDeriver,
-  MESSAGES,
   secured,
+  soleAuthorizationLine,
   type HandlerLike,
   type RawHeaderSource,
   type ResponseLike,
@@ -51,7 +51,19 @@ const ANSWERS: Record<string, unknown> = {
     exp: 4102444800,
     kind: "operator",
   },
+  // What a middleware plants in req.headers.authorization. Valid too, so
+  // verifying it would succeed and show up in `asked`.
+  "injected.token": {
+    active: true,
+    sub: "user_injected",
+    scope: "fleet:control",
+    exp: 4102444800,
+    kind: "operator",
+  },
 };
+
+/** The Express app every server in this file serves. */
+let handler: express.Express;
 
 let center: Server;
 let centerUrl: string;
@@ -104,10 +116,34 @@ beforeAll(async () => {
   // lane deriver. Both tokens are operators, so reaching the center is
   // "interactive" and anything else is "background".
   const deriver = createLaneDeriver({ url: centerUrl, secret: SECRET });
-  server.get("/lane", (req, res) => {
-    const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
-    void deriver.derive(header).then((lane) => res.json({ lane }));
-  });
+  const lane = (req: express.Request, res: express.Response): void => {
+    void deriver.derive(soleAuthorizationLine(req)).then((l) => res.json({ lane: l }));
+  };
+  server.get("/lane", lane);
+
+  // A middleware that plants a credential in req.headers before anything
+  // authorizes the request. Neither the adapter nor the lane recipe may
+  // verify it: they read the line the caller sent, or nothing.
+  const injected = secured(express.Router());
+  injected.post("/scoped", auth.requireScope("fleet:control"), whoami);
+  injected.get("/public", auth.allowPublic(), whoami);
+  server.use(
+    "/injected",
+    (req, _res, next) => {
+      req.headers.authorization = "Bearer injected.token";
+      next();
+    },
+    injected
+  );
+  server.get(
+    "/injected-lane",
+    (req, _res, next) => {
+      req.headers.authorization = "Bearer injected.token";
+      next();
+    },
+    lane
+  );
+  handler = server;
 
   app = server.listen(0, "127.0.0.1");
   await once(app, "listening");
@@ -175,7 +211,7 @@ const raw = async (
   return { status, body: text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : {} };
 };
 
-const missingToken = { error: { message: MESSAGES.missingToken } };
+const missingToken = { error: { message: "a bearer token is required" } };
 
 describe("two Authorization lines on the wire are no credential", () => {
   const TWO_BEARERS = ["Authorization: Bearer a.token", "Authorization: Bearer b.token"];
@@ -314,8 +350,9 @@ describe("three lines are not one either", () => {
  *
  * - Node 22 (22.23, what `node:22-alpine` and CI run) answers `431 Request
  *   Header Fields Too Large` itself, before any handler runs.
- * - Node 25 (25.0) hands the app a TRUNCATED `rawHeaders` — 2046 entries at
- *   1100 fillers — so a second `Authorization` line after the filler is
+ * - Node 25 (25.0) hands the app TRUNCATED lists — `rawHeaders` overshoots to
+ *   2046 entries at 1100 fillers, being filled in batches, while `headers`
+ *   stops at 2000 — so a second `Authorization` line after the filler is
  *   simply not there to count. That is the hole the limit check closes.
  *
  * Both are safe once the check exists; neither may ask the center.
@@ -472,6 +509,21 @@ describe("authorizationLines", () => {
     expect(of(entries(18), server(10))).toBe(0);
     expect(of(entries(20), server(10))).toBe(Number.POSITIVE_INFINITY);
     expect(of(entries(3998), server(2000))).toBe(0);
+    // The parser's own limit, the one in force on the connection: the
+    // STRICTER of it and the server's reading wins, in both directions.
+    const both = (maxHeadersCount: unknown, maxHeaderPairs: unknown) => ({
+      server: { maxHeadersCount },
+      parser: { maxHeaderPairs },
+    });
+    expect(of(entries(5000), both(0, 2000))).toBe(Number.POSITIVE_INFINITY);
+    expect(of(entries(1998), both(0, 2000))).toBe(0);
+    expect(of(entries(12), both(5, 2000))).toBe(Number.POSITIVE_INFINITY);
+    expect(of(entries(12), both(null, 10))).toBe(Number.POSITIVE_INFINITY);
+    // Internal to Node, so only a positive number counts; anything else is
+    // "unknown" and the server's reading stands.
+    expect(of(entries(5000), both(0, 0))).toBe(0);
+    expect(of(entries(5000), both(0, "10"))).toBe(0);
+    expect(of(entries(5000), both(0, undefined))).toBe(0);
     // Zero, negative or NaN: `<< 1` is <= 0, which Node reads as no limit.
     expect(of(entries(5000), server(0))).toBe(0);
     expect(of(entries(5000), server(-1))).toBe(0);
@@ -532,14 +584,148 @@ describe("a request whose raw lines do not account for its header", () => {
     expect(asked).toEqual([]);
   });
 
-  it("is a credential when one raw line and header() agree", async () => {
+  it("verifies the one raw line, whatever header() answers", async () => {
+    // Count and value share one source: header() is not read at all.
     expect(
       await statusFor({
         method: "GET",
         rawHeaders: ["Authorization", "Bearer a.token"],
-        header: () => "Bearer a.token",
+        header: () => "Bearer injected.token",
       })
     ).toBe(200);
     expect(asked).toEqual(["a.token"]);
+  });
+});
+
+describe("a credential planted in req.headers by middleware", () => {
+  it("is never verified: one raw line is asked about, not the planted one", async () => {
+    const scoped = await raw("POST", "/injected/scoped", ["Authorization: Bearer a.token"]);
+    expect(scoped.status).toBe(200);
+    expect(scoped.body).toEqual({ actor: "user_a" });
+
+    const open = await raw("GET", "/injected/public", ["Authorization: Bearer a.token"]);
+    expect(open.body).toEqual({ actor: "user_a" });
+
+    const lane = await raw("GET", "/injected-lane", ["Authorization: Bearer b.token"]);
+    expect(lane.body).toEqual({ lane: "interactive" });
+
+    expect(asked).toEqual(["a.token", "a.token", "b.token"]);
+  });
+
+  it("is no credential with zero raw lines: 401, visitor, background, no center", async () => {
+    const scoped = await raw("POST", "/injected/scoped", []);
+    expect(scoped.status).toBe(401);
+    expect(scoped.body).toEqual(missingToken);
+
+    const open = await raw("GET", "/injected/public", []);
+    expect(open.status).toBe(200);
+    expect(open.body).toEqual({ actor: null });
+
+    const lane = await raw("GET", "/injected-lane", []);
+    expect(lane.body).toEqual({ lane: "background" });
+
+    expect(asked).toEqual([]);
+  });
+});
+
+describe("soleAuthorizationLine", () => {
+  const of = (rawHeaders: unknown, socket?: unknown): string | null =>
+    soleAuthorizationLine({ rawHeaders, socket } as RawHeaderSource);
+
+  it("returns the one line's value from rawHeaders, empty included", () => {
+    expect(of(["Host", "x", "authorization", "Bearer a"])).toBe("Bearer a");
+    expect(of(["Authorization", ""])).toBe("");
+  });
+
+  it("returns null for none, several, or a count that cannot be known", () => {
+    expect(of([])).toBeNull();
+    expect(of(["Host", "x"])).toBeNull();
+    expect(of(["Authorization", "a", "authorization", "b"])).toBeNull();
+    expect(of(undefined)).toBeNull();
+    expect(of(["Authorization"])).toBeNull();
+    expect(of(["Authorization", 7])).toBeNull();
+    expect(of(["Authorization", "a", ...Array<string>(2000).fill("x")])).toBeNull();
+    expect(of(["Authorization", "a", "x", "1"], { parser: { maxHeaderPairs: 4 } })).toBeNull();
+  });
+});
+
+/**
+ * Several requests on ONE keep-alive socket. Node copies
+ * `server.maxHeadersCount` into the connection's parser once, when the
+ * connection opens, so changing it afterwards does not change what that
+ * connection enforces.
+ */
+const keepAlive = async (port: number) => {
+  const socket = connect(port, "127.0.0.1");
+  await once(socket, "connect");
+  let buffer = "";
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk: string) => {
+    buffer += chunk;
+  });
+  const next = (): Promise<RawResponse> =>
+    new Promise((resolve, reject) => {
+      const poll = setInterval(() => {
+        const end = buffer.indexOf("\r\n\r\n");
+        if (end < 0) return;
+        const head = buffer.slice(0, end);
+        const length = Number(/content-length:\s*(\d+)/i.exec(head)?.[1] ?? "0");
+        if (buffer.length < end + 4 + length) return;
+        clearInterval(poll);
+        const text = buffer.slice(end + 4, end + 4 + length);
+        buffer = buffer.slice(end + 4 + length);
+        resolve({
+          status: Number(/^HTTP\/1\.1 (\d{3})/.exec(head)?.[1] ?? "0"),
+          body: text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : {},
+        });
+      }, 5);
+      setTimeout(() => {
+        clearInterval(poll);
+        reject(new Error("no response on the keep-alive socket"));
+      }, 5000);
+    });
+  return {
+    send: (method: "GET" | "POST", path: string, lines: readonly string[]) => {
+      socket.write(
+        [
+          `${method} ${path} HTTP/1.1`,
+          "Host: localhost",
+          ...lines,
+          ...(method === "POST" ? ["Content-Length: 0"] : []),
+          "",
+          "",
+        ].join("\r\n")
+      );
+      return next();
+    },
+    close: () => socket.destroy(),
+  };
+};
+
+describe("maxHeadersCount changed while a keep-alive connection is open", () => {
+  it.each([
+    ["unset (2000) then 0", undefined, 1100],
+    ["5 then 0", 5, 40],
+  ] as const)("%s: the parser's own limit still applies, so 401 or 431 and no center", async (_name, initial, fillers) => {
+    const server = createServer(handler);
+    if (initial !== undefined) server.maxHeadersCount = initial;
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const client = await keepAlive((server.address() as AddressInfo).port);
+    try {
+      // Opens the connection, and with it the parser, under the first limit.
+      expect((await client.send("GET", "/api/health", [])).status).toBe(200);
+
+      // Lifted for the SERVER, but not for this connection's parser, which
+      // still truncates (Node 25) or refuses (Node 22).
+      server.maxHeadersCount = 0;
+      const response = await client.send("POST", "/api/scoped", smuggled(fillers));
+      expectRefusedPastTheLimit(response, 401, missingToken);
+    } finally {
+      client.close();
+      server.closeAllConnections();
+      server.close();
+      await once(server, "close");
+    }
   });
 });

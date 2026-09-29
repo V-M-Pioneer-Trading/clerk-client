@@ -69,7 +69,7 @@ import { METHODS } from "node:http";
 import type { CenterAnswer, Introspector } from "./center";
 import { createIntrospector } from "./center";
 import type { Authorizer } from "./core";
-import { authorizationLines, createAuthorizer, isSafeMethod } from "./core";
+import { createAuthorizer, isSafeMethod, soleAuthorizationLine } from "./core";
 import { MESSAGES } from "./messages";
 import type {
   Decision,
@@ -98,16 +98,20 @@ export interface RequestLike {
    * Node's `rawHeaders`: every header line as sent, alternating name and
    * value. Read for one thing only — how many `Authorization` lines arrived,
    * because Node keeps the first and discards the rest, so `header()` cannot
-   * tell one from two. See {@link authorizationLines}.
+   * tell one from two — and the value of that one line, so that what is
+   * counted and what is verified are the same bytes. See
+   * {@link soleAuthorizationLine}.
    *
    * Required rather than optional: a request double without it would
    * otherwise be read as carrying exactly one line, which is the defect.
    */
   readonly rawHeaders: readonly string[];
   /**
-   * The connection, read for `socket.server.maxHeadersCount` and nothing
-   * else: past that limit Node 25 hands over a truncated `rawHeaders` (Node 22
-   * answers 431 instead), so a repeat can be missing from it. Optional because a double need not have
+   * The connection, read for the header-count limit in force on it
+   * (`socket.parser.maxHeaderPairs`, `socket.server.maxHeadersCount`) and
+   * nothing else: past that limit Node 25 hands over a truncated
+   * `rawHeaders` (Node 22 answers 431 instead), so a repeat can be missing
+   * from it. Optional because a double need not have
    * one; without it Node's default limit is assumed.
    */
   readonly socket?: unknown;
@@ -1141,21 +1145,13 @@ export function createExpressAuth(
  * (Node 22 answers 431 before we run) and a second `Authorization` can be
  * missing — is no credential too.
  *
- * So is a request with **zero** raw lines whose `header()` still answers:
- * nothing on the wire carried that value, so something in the process put it
- * there. Middleware that sets `req.headers.authorization` itself is not
- * supported; this adapter verifies what the caller sent.
- *
- * With exactly one line the value comes from `header()`, as it always has;
- * a comma-folded value carrying two credentials is then read by `bearerFrom`
- * as none.
+ * With exactly one line, the value is **that line's value in `rawHeaders`**,
+ * never `req.header()`: the count and the credential come from the same list,
+ * so a middleware that rewrote `req.headers.authorization` changes neither.
+ * With zero lines there is no credential whatever `req.header()` answers —
+ * nothing on the wire carried it. Setting `req.headers.authorization` in the
+ * process is therefore not a way to authenticate a request; this adapter
+ * verifies what the caller sent. A comma-folded value carrying two
+ * credentials in one line is read by `bearerFrom` as none.
  */
-const credentialOf = (req: RequestLike): string | null =>
-  authorizationLines(req) === 1 ? headerValue(req, "Authorization") : null;
-
-/** One header as a single string, or null. An array is joined as Node joins. */
-const headerValue = (req: RequestLike, name: string): string | null => {
-  const value = req.header(name);
-  if (value === undefined) return null;
-  return Array.isArray(value) ? value.join(", ") : value;
-};
+const credentialOf = (req: RequestLike): string | null => soleAuthorizationLine(req);

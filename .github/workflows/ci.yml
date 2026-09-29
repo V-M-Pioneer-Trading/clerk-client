@@ -426,6 +426,7 @@ jobs:
             createExpressAuth,
             createLaneDeriver,
             secured,
+            soleAuthorizationLine,
           } = require('@v-m-pioneer-trading/introspection-client');
 
           const ACTIVE = (sub) => ({
@@ -482,8 +483,7 @@ jobs:
               secret: 'runtime-proof-secret',
             });
             app.get('/lane', (req, res) => {
-              const header = authorizationLines(req) === 1 ? req.header('Authorization') : null;
-              deriver.derive(header).then((lane) => res.json({ lane }));
+              deriver.derive(soleAuthorizationLine(req)).then((lane) => res.json({ lane }));
             });
             const server = app.listen(0, '127.0.0.1');
             await new Promise((r) => server.once('listening', r));
@@ -548,6 +548,10 @@ jobs:
             }
             if (authorizationLines({}) !== Infinity) {
               fail('authorizationLines reads a request with no rawHeaders as countable');
+            }
+            if (soleAuthorizationLine({ rawHeaders: ['Authorization', 'Bearer a'] }) !== 'Bearer a'
+                || soleAuthorizationLine({ rawHeaders: ['Authorization', 'a', 'authorization', 'b'] }) !== null) {
+              fail('soleAuthorizationLine is not exported, or does not return the one raw line');
             }
 
             server.close();

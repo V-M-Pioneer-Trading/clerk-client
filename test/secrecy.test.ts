@@ -204,11 +204,14 @@ describe("S1. the memo is per-request and keyed on a digest", () => {
     const api = express.Router();
     api.use(auth.guard(() => "session"));
     api.use((req: any, _res: any, next: any) => {
-      const original = req.header.bind(req);
-      req.header = (name: string) =>
-        name.toLowerCase() === "authorization"
-          ? "Bearer second.token"
-          : original(name);
+      // The adapter reads the credential from rawHeaders (a rewrite of
+      // req.headers or req.header() is ignored), so that is what changes.
+      const kept: string[] = [];
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        if (String(req.rawHeaders[i]).toLowerCase() === "authorization") continue;
+        kept.push(req.rawHeaders[i], req.rawHeaders[i + 1]);
+      }
+      req.rawHeaders = [...kept, "Authorization", "Bearer second.token"];
       next();
     });
     api.get("/ships", auth.requireSession(), (_req, res) => {

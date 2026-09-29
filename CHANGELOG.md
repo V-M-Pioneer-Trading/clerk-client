@@ -24,24 +24,33 @@ Part of V-M-Pioneer-Trading/meta#80.
   kilobytes of filler) Node 22 answers `431` before any handler runs, but
   Node 25 hands the app a truncated `rawHeaders`, so there a second
   `Authorization` line sent after ~1000 filler lines was never counted and the
-  first was verified. A request whose `rawHeaders` has reached the server's
-  limit — read from `req.socket.server.maxHeadersCount` the way Node reads it;
-  `0` means no limit — is now no credential, even with one line. So is a
-  request with no `rawHeaders`, and one with zero `Authorization` lines on the
-  wire whose `req.header("Authorization")` still answers: middleware that sets
-  `req.headers.authorization` itself is unsupported.
+  first was verified. A request whose `rawHeaders` has reached the limit in
+  force is now no credential, even with one line. The limit is the stricter of
+  `req.socket.server.maxHeadersCount` (Node's arithmetic; `0` means no limit)
+  and `req.socket.parser.maxHeaderPairs`, because Node copies the server's
+  setting into each connection's parser once, when it opens: raising or lifting
+  `maxHeadersCount` on a live keep-alive connection would otherwise have read
+  as "no limit" while the parser still truncated. Set it before the first
+  connection. A request with no `rawHeaders` is no credential too.
+- **The value verified is the one raw line, not `req.header()`.** With
+  exactly one `Authorization` line, the adapter takes the credential from
+  `rawHeaders` itself, so a middleware that set or rewrote
+  `req.headers.authorization` is ignored: zero raw lines is no credential, and
+  one raw line is verified as sent.
 
 ### Added
 
-- `authorizationLines(req: RawHeaderSource): number` (and the
-  `RawHeaderSource` type, `{ rawHeaders, socket? }`, which a Node or Express
-  request satisfies): how many `Authorization` lines a request carried, or
-  `Infinity` when that cannot be known. `createAuthorizer().authorize()` and
+- `soleAuthorizationLine(req: RawHeaderSource): string | null`: the value of
+  the request's one raw `Authorization` line, or `null` for none, several, or
+  a count that cannot be known. `createAuthorizer().authorize()` and
   `createLaneDeriver().derive()` take one header value and cannot see a
   repeat, so their callers — st-gateway above all — pass
-  `authorizationLines(req) === 1 ? req.header("Authorization") : null`. It
-  takes the request, not its `rawHeaders`, because the header limit lives on
-  the server.
+  `soleAuthorizationLine(req)` instead of `req.header("Authorization")`.
+- `authorizationLines(req: RawHeaderSource): number`: the count alone, or
+  `Infinity` when it cannot be known; `0` for an empty list.
+- The `RawHeaderSource` type, `{ rawHeaders, socket? }`, which a Node or
+  Express request satisfies. Both helpers take the request, not its
+  `rawHeaders`, because the header limit lives on the connection.
 
 ### Changed
 
@@ -50,7 +59,8 @@ Part of V-M-Pioneer-Trading/meta#80.
   hand-written request double no longer typechecks until it adds one. At
   runtime a request without a `rawHeaders` array is read as carrying no
   credential, never as carrying one line. It also gained an optional
-  `socket`, read only for `server.maxHeadersCount`.
+  `socket`, read only for `parser.maxHeaderPairs` and
+  `server.maxHeadersCount`. `header()` is no longer read for the credential.
 - Fixture version 4 vendored (meta `46c033e`, 40 + 12 cases); its four
   two-line cases run as real separate header lines through real Express and
   the lane recipe.

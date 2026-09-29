@@ -573,11 +573,14 @@ describe("S3. one inbound request asks the center at most once", () => {
     // A middleware that rewrites the credential between the two enforcement
     // points. Contrived, and precisely what the key exists to survive.
     api.use((req: any, _res: any, next: any) => {
-      const original = req.header.bind(req);
-      req.header = (name: string) =>
-        name.toLowerCase() === "authorization"
-          ? "Bearer second.token"
-          : original(name);
+      // The adapter reads the credential from rawHeaders (a rewrite of
+      // req.headers or req.header() is ignored), so that is what changes.
+      const kept: string[] = [];
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        if (String(req.rawHeaders[i]).toLowerCase() === "authorization") continue;
+        kept.push(req.rawHeaders[i], req.rawHeaders[i + 1]);
+      }
+      req.rawHeaders = [...kept, "Authorization", "Bearer second.token"];
       next();
     });
     api.get("/ships", counting.requireSession(), handler("list"));

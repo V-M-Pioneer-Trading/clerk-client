@@ -12,7 +12,7 @@
  * line and drops the rest before anything reads it. Those cases are therefore
  * sent over HTTP as real, separate header lines — through real Express and
  * `createExpressAuth` for the calling-service cases, and through an Express app
- * applying `authorizationLines` in front of `createLaneDeriver` for the
+ * applying `soleAuthorizationLine` in front of `createLaneDeriver` for the
  * gateway case, which is the recipe the README gives st-gateway. The receiving
  * server records the lines it saw, so a sender that folded them into one would
  * fail the case rather than pass it by accident. An authorization of any other
@@ -24,7 +24,7 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import express from "express";
 
-import { authorizationLines, createAuthorizer } from "../src/core";
+import { createAuthorizer, soleAuthorizationLine } from "../src/core";
 import { createExpressAuth, identityOf } from "../src/express";
 import { createLaneDeriver } from "../src/gateway";
 import {
@@ -355,8 +355,7 @@ const laneOverTheWire = async (
   const app = express();
   app.get("/case", (req, res) => {
     seen.push(authorizationLinesSeen(req));
-    const header = authorizationLines(req) === 1 ? req.header("Authorization") : null;
-    void deriver.derive(header).then((lane) => res.json({ lane }));
+    void deriver.derive(soleAuthorizationLine(req)).then((lane) => res.json({ lane }));
   });
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
