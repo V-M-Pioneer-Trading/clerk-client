@@ -7,11 +7,11 @@ declared. This package is that client for the three Node services
 (fleet-service, automation-service, st-gateway).
 
 Its behaviour is not described here but *fixed* by
-[`fixtures/introspection.json`][fixture] in `meta` — forty conditions for a
-calling service and twelve for st-gateway's queue lane, each with the center's
+[`fixtures/introspection.json`][fixture] in `meta` — forty-one conditions for a
+calling service and thirteen for st-gateway's queue lane, each with the center's
 response and the exact status, message, identity and call count expected. It is
-vendored into `test/fixtures/` (version 4), and the conformance suite drives all
-fifty-two cases against a real local HTTP stub. The four version-4 cases carry
+vendored into `test/fixtures/` (version 5), and the conformance suite drives all
+fifty-four cases against a real local HTTP stub. The four version-4 cases carry
 two `Authorization` lines, which no header value can express, so they are sent
 as real separate lines through real Express and through the lane recipe below.
 
@@ -24,7 +24,7 @@ URL, which `package-lock.json` records with an integrity hash, so the Docker
 build needs no token and no git.
 
 ```sh
-npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.2/v-m-pioneer-trading-introspection-client-1.1.2.tgz
+npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.3/v-m-pioneer-trading-introspection-client-1.1.3.tgz
 ```
 
 ## Quick start
@@ -415,7 +415,7 @@ Rows are in evaluation order, and the first is first for a reason.
 | Active, route declares `"session"` | proceeds, even with no scopes at all — `"scope":""` and no `scope` key alike (RFC 7662 makes it optional) | yes |
 | Active, route's scope missing | `403` `this action requires a scope this session does not carry` — the scope is **not** named | yes |
 | Active, route's scope present | proceeds with `{sub, kind, scopes}` | yes |
-| Center unreachable, timed out, non-2xx, malformed, or rejecting our secret | `503` `the authentication service could not process this request` | yes |
+| Center unreachable, timed out, non-2xx, malformed (a key named twice in any object included), or rejecting our secret | `503` `the authentication service could not process this request` | yes |
 
 Every rejection uses the `{"error":{"message":…}}` envelope. Methods and the
 bearer scheme are compared **case-insensitively**; scope literals **exactly** —

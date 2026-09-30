@@ -16,6 +16,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   SECRET_HEADER,
 } from "./messages";
+import { parseStrictJson } from "./strictJson";
 import type { Identity, IntrospectionConfig, Kind } from "./types";
 
 /**
@@ -164,12 +165,25 @@ export function createIntrospector(config: IntrospectionConfig): Introspector {
           return UNAVAILABLE;
         }
 
+        // readCapped decodes the bytes before the reader below sees them, so a
+        // leading UTF-8 BOM is stripped and invalid UTF-8 becomes U+FFFD.
+        // Jackson refuses invalid UTF-8 and Go refuses a BOM, so both bodies
+        // are read here where the Java or Go client answers 503. A known
+        // difference, left as it is: neither can come from the center, which
+        // marshals a struct.
         const text = await readCapped(response, maxBytes);
         if (text === null) return UNAVAILABLE;
 
+        // Strict, not JSON.parse: a key named twice in any object is a
+        // malformed answer (meta fixture v5, ts-introspection-client#6).
+        // JSON.parse lets the last value win, so {"sub":"a","sub":"b"} would
+        // proceed as b where the Java client (Jackson,
+        // STRICT_DUPLICATE_DETECTION, any depth) and the Go client (top-level
+        // members) refuse the body. The cap above runs first, so the parser
+        // never sees more than maxResponseBytes.
         let parsed: unknown;
         try {
-          parsed = JSON.parse(text);
+          parsed = parseStrictJson(text);
         } catch {
           return UNAVAILABLE;
         }
