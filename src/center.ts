@@ -165,6 +165,12 @@ export function createIntrospector(config: IntrospectionConfig): Introspector {
           return UNAVAILABLE;
         }
 
+        // readCapped decodes the bytes before the reader below sees them, so a
+        // leading UTF-8 BOM is stripped and invalid UTF-8 becomes U+FFFD.
+        // Jackson refuses invalid UTF-8 and Go refuses a BOM, so both bodies
+        // are read here where the Java or Go client answers 503. A known
+        // difference, left as it is: neither can come from the center, which
+        // marshals a struct.
         const text = await readCapped(response, maxBytes);
         if (text === null) return UNAVAILABLE;
 

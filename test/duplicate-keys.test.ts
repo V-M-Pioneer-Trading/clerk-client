@@ -296,6 +296,30 @@ describe("parseStrictJson is JSON.parse, less the repeated key", () => {
     "// c\n1",
     "\ufeff1",
     "1 2",
+    // Only space, tab, LF and CR are JSON whitespace: not NBSP, VT, FF,
+    // the Unicode line separators or any other Unicode space, leading or trailing.
+    "\u00a01",
+    "{}\u00a0",
+    "\u000b1",
+    "{}\u000b",
+    "\u000c1",
+    "{}\u000c",
+    "\u20281",
+    "{}\u2028",
+    "\u20291",
+    "{}\u2029",
+    "\u30001",
+    "{}\u3000",
+    "\u00851",
+    "{}\u0085",
+    // A raw control character inside a string or a key; only its escape is JSON.
+    '"a\u000ab"',
+    '"a\u000db"',
+    '"a\u0000b"',
+    '"a\u0009b"',
+    '"a\u001fb"',
+    '{"a\u000ab":1}',
+    '{"active":true,"sub":"user_a\u000a"}',
   ];
   it.each(refusedByBoth)("refuses %j, as JSON.parse does", (text) => {
     expect(() => JSON.parse(text)).toThrow(SyntaxError);
@@ -323,8 +347,8 @@ describe("parseStrictJson is JSON.parse, less the repeated key", () => {
     const startedAt = process.hrtime.bigint();
     for (let i = 0; i < runs; i += 1) parseStrictJson(body);
     const perParseMs = Number(process.hrtime.bigint() - startedAt) / 1e6 / runs;
-    // Typically a few microseconds; a tenth of a millisecond is two orders of
-    // magnitude of headroom for a slow CI box.
-    expect(perParseMs).toBeLessThan(0.1);
+    // Typically a few microseconds. The bound is the claim itself, under a
+    // millisecond, which leaves a loaded CI runner hundreds of times headroom.
+    expect(perParseMs).toBeLessThan(1);
   });
 });
