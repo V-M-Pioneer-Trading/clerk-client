@@ -24,7 +24,7 @@ URL, which `package-lock.json` records with an integrity hash, so the Docker
 build needs no token and no git.
 
 ```sh
-npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.3/v-m-pioneer-trading-introspection-client-1.1.3.tgz
+npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.2.0/v-m-pioneer-trading-introspection-client-1.2.0.tgz
 ```
 
 ## Quick start
@@ -389,6 +389,7 @@ There is deliberately no second copy of `kind`: a knob fence is
 | `soleAuthorizationLine(req)` | The value of the request's one raw `Authorization` line, or `null` for none, several, or a count that cannot be known. What callers of `createAuthorizer` and `createLaneDeriver` pass as the header |
 | `authorizationLines(req)` | How many `Authorization` lines a request carried, from `req.rawHeaders` and the header limit in force; `Infinity` when that cannot be known. Only `1` is a credential |
 | `loadIntrospectionConfig(env?)`, `IntrospectionConfigError` | Startup validation |
+| `createCentralM2MTokenSource(options)`, `M2MTokenSource` | A cached machine token minted by the center; see below |
 | `MESSAGES`, `CREDENTIALS_IGNORED`, `SECRET_HEADER`, `ENV_URL`, `ENV_SECRET`, `DEFAULT_TIMEOUT_MS`, `DEFAULT_MAX_RESPONSE_BYTES` | Constants |
 
 `requireScope` throws at startup for `""`, whitespace, `"none"`, `"session"`
@@ -396,6 +397,35 @@ and `"ignore-credentials"`: the last three are the reserved words for the other
 intents, and spelled as a scope each read as a demand while silently producing
 its opposite. A fixed `guard("ignore-credentials")` throws too, and a resolver
 returning it is undeclared: `ignoreCredentials()` is a declaration only.
+
+### Minting a machine token
+
+A headless service that needs a bearer token of its own (automation-service's
+scheduler, say) asks the center for one. The wire contract is the "Minting a
+machine token" section of [`token-introspection.md`][mint]; this is its caller
+side.
+
+```ts
+import { createCentralM2MTokenSource } from "@v-m-pioneer-trading/introspection-client";
+
+const tokens = createCentralM2MTokenSource({
+  url: "http://localhost:3005/auth/v1/m2m-token",
+  secret: "this-caller's-own-secret",
+});
+
+// Before every outbound call; the token is cached, so this is almost always free.
+async function authorization(): Promise<string> {
+  return `Bearer ${await tokens.getToken()}`;
+}
+```
+
+The token is held in memory only and refreshed once half its lifetime has
+passed, one refresh at a time. If a refresh fails the cached token is used until
+it expires. A `503` or a 1 s timeout is retried once; a `401` is not, and
+throws an error saying the center did not recognise this caller (the secret is
+wrong or unregistered). No error or log line carries the secret or the token.
+
+[mint]: https://github.com/V-M-Pioneer-Trading/meta/blob/main/docs/design/token-introspection.md#minting-a-machine-token
 
 ### Behaviour
 

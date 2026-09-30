@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-09-30
+
+New export, no change to anything existing. Part of
+V-M-Pioneer-Trading/meta#80 (auth-design decision 22).
+
+### Added
+
+- **`createCentralM2MTokenSource({ url, secret, fetch?, now?, timeoutMs? })`
+  and `M2MTokenSource`**: the caller side of auth-service's machine-token
+  endpoint, a port of automation-service's `createClerkM2MTokenSource` with
+  the Clerk call replaced by one `POST` to the center (`X-Service-Secret`,
+  empty body, 1 s timeout). The token is cached in memory, refreshed once half
+  its lifetime (read from the unverified JWT's `iat`/`exp`) has passed, with a
+  single refresh in flight; a failed refresh serves the cached token until it
+  actually expires. One immediate retry after a `503` or a timeout, none after
+  a `401`, which is a configuration error that says the center did not
+  recognise this caller. Neither the secret nor the token appears in an error
+  or a log.
+
 ## 1.1.3 — 2026-09-30
 
 Bug fix, no API change. Conforms to `meta` fixture version 5. Part of
