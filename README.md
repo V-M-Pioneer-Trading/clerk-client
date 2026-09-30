@@ -24,7 +24,7 @@ URL, which `package-lock.json` records with an integrity hash, so the Docker
 build needs no token and no git.
 
 ```sh
-npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.1.3/v-m-pioneer-trading-introspection-client-1.1.3.tgz
+npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.2.0/v-m-pioneer-trading-introspection-client-1.2.0.tgz
 ```
 
 ## Quick start
@@ -389,6 +389,7 @@ There is deliberately no second copy of `kind`: a knob fence is
 | `soleAuthorizationLine(req)` | The value of the request's one raw `Authorization` line, or `null` for none, several, or a count that cannot be known. What callers of `createAuthorizer` and `createLaneDeriver` pass as the header |
 | `authorizationLines(req)` | How many `Authorization` lines a request carried, from `req.rawHeaders` and the header limit in force; `Infinity` when that cannot be known. Only `1` is a credential |
 | `loadIntrospectionConfig(env?)`, `IntrospectionConfigError` | Startup validation |
+| `createCentralM2MTokenSource(options)`, `M2MTokenSource`, `M2MTokenError` | A cached machine token minted by the center; see below |
 | `MESSAGES`, `CREDENTIALS_IGNORED`, `SECRET_HEADER`, `ENV_URL`, `ENV_SECRET`, `DEFAULT_TIMEOUT_MS`, `DEFAULT_MAX_RESPONSE_BYTES` | Constants |
 
 `requireScope` throws at startup for `""`, whitespace, `"none"`, `"session"`
@@ -396,6 +397,69 @@ and `"ignore-credentials"`: the last three are the reserved words for the other
 intents, and spelled as a scope each read as a demand while silently producing
 its opposite. A fixed `guard("ignore-credentials")` throws too, and a resolver
 returning it is undeclared: `ignoreCredentials()` is a declaration only.
+
+### Minting a machine token
+
+A headless service that needs a bearer token of its own (automation-service's
+scheduler, say) asks the center for one. The wire contract is the "Minting a
+machine token" section of [`token-introspection.md`][mint]; this is its caller
+side.
+
+```ts
+import {
+  createCentralM2MTokenSource,
+  M2MTokenError,
+} from "@v-m-pioneer-trading/introspection-client";
+
+const tokens = createCentralM2MTokenSource({
+  url: "http://localhost:3005/auth/v1/m2m-token",
+  secret: "this-callers-own-secret",
+});
+
+// Before every outbound call; the token is cached, so this is almost always free.
+async function authorization(): Promise<string> {
+  return `Bearer ${await tokens.getToken()}`;
+}
+
+// At startup: fetch once. A wrong secret is a configuration error, so exit;
+// anything else is the center being slow or down, so log and carry on. The
+// first call that needs a token fetches it again.
+async function startup(): Promise<void> {
+  try {
+    await tokens.getToken();
+  } catch (err) {
+    if (err instanceof M2MTokenError && err.kind === "unknown-caller") {
+      console.error(err.message);
+      process.exit(1);
+    }
+    console.warn("machine token not fetched at startup, will retry on first use");
+  }
+}
+```
+
+The options are checked when the source is created, and a bad one throws at
+once: a non-empty `url`, a non-empty `secret` without CR or LF, and a
+`timeoutMs` (default 1000) that is a positive integer no larger than 2^31-1.
+
+The token is held in memory only and refreshed at `iat + (exp - iat) / 2`, read
+from the token, one refresh at a time. Every failure is an `M2MTokenError`
+whose `kind` says what to do:
+
+| `kind` | Means | Caller |
+|---|---|---|
+| `"unknown-caller"` | The center answered `401`: the secret is wrong or unregistered | Exit at startup. Always thrown, even when a cached token is still valid, and again (with no request) for the next 10 s |
+| `"unavailable"` | A timeout, a refused connection or other transport failure, a `503`, any other status | Log and continue. `cause` carries only `code` and `name` |
+| `"malformed"` | The answer was not JSON with a token, or the token has no usable lifetime (`iat` and `exp` finite, `exp > iat`, at most 7 days, not already expired) | Log and continue |
+
+If a refresh fails with anything but `unknown-caller`, the cached token is
+served until it actually expires, and no new request is made for 10 s: within
+that window the cached token comes back at once, or the last error is thrown
+when it has expired. The only retry is one immediate retry after a timeout,
+whether it came while waiting for the headers or while reading the body; a
+`503` and a `401` are never retried. No error or log line carries the secret,
+the token or any part of a response body.
+
+[mint]: https://github.com/V-M-Pioneer-Trading/meta/blob/main/docs/design/token-introspection.md#minting-a-machine-token
 
 ### Behaviour
 

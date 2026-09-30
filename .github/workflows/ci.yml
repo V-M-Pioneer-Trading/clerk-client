@@ -90,7 +90,7 @@ jobs:
           # require() works, and every export is really there.
           node -e "
             const c = require('@v-m-pioneer-trading/introspection-client');
-            for (const name of ['createAuthorizer','createExpressAuth','createLaneDeriver','loadIntrospectionConfig','isSafeMethod','MESSAGES']) {
+            for (const name of ['createAuthorizer','createExpressAuth','createLaneDeriver','loadIntrospectionConfig','isSafeMethod','MESSAGES','createCentralM2MTokenSource','M2MTokenError']) {
               if (typeof c[name] === 'undefined') throw new Error('missing export ' + name);
             }
             console.log('require() ok');

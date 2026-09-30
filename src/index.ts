@@ -71,3 +71,6 @@ export {
   requirementOf,
   secured,
 } from "./express";
+
+export type { CentralM2MTokenOptions, M2MTokenErrorKind, M2MTokenSource } from "./m2mToken";
+export { createCentralM2MTokenSource, M2MTokenError } from "./m2mToken";
