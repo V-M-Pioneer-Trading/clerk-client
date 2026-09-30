@@ -561,3 +561,80 @@ jobs:
           });
           JS
           node runtime-authorization-lines.js
+
+      # A center answer that names a key twice is a malformed answer (meta
+      # fixture v5, #6): JSON.parse would let the last value win, where the Go
+      # and Java clients answer 503. Proven from the packed tarball, so a build
+      # that shipped without the strict reader, or fell back to JSON.parse,
+      # fails here and not in a consumer.
+      - name: Prove a duplicated key is a malformed answer, from the tarball
+        run: |
+          cd /tmp/consumer
+          cat > runtime-duplicate-key.js <<'JS'
+          const http = require('node:http');
+          const {
+            MESSAGES,
+            createAuthorizer,
+            createLaneDeriver,
+          } = require('@v-m-pioneer-trading/introspection-client');
+
+          // Keyed on the token. The first body is the fixture's
+          // center-returns-duplicate-key answer, byte for byte.
+          const BODIES = {
+            'duplicate.token.one':
+              '{"active":true,"sub":"user_31qP8k2cQeXampleOperator","sub":"user_31qP8k2cQeXampleOther","scope":"fleet:control","exp":4102444800,"kind":"operator"}',
+            'nested.token':
+              '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","x":{"k":1,"k":2}}',
+            'escaped.token':
+              '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","s\\u0075b":"user_b"}',
+            'distinct.token':
+              '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","x":{"sub":"user_b"}}',
+          };
+          let centerCalls = 0;
+          const center = http.createServer((req, res) => {
+            const chunks = [];
+            req.on('data', (c) => chunks.push(c));
+            req.on('end', () => {
+              centerCalls += 1;
+              const token = new URLSearchParams(Buffer.concat(chunks).toString()).get('token');
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(BODIES[token] ?? '{"active":false}');
+            });
+          });
+
+          const fail = (message) => { console.error('::error::' + message); process.exitCode = 1; };
+
+          center.listen(0, '127.0.0.1', async () => {
+            const config = {
+              url: 'http://127.0.0.1:' + center.address().port + '/auth/v1/introspect',
+              secret: 'runtime-proof-secret',
+            };
+            const authorizer = createAuthorizer(config);
+            const deriver = createLaneDeriver(config);
+            const decide = (token) => authorizer.authorize({
+              method: 'POST', requires: 'fleet:control', authorization: 'Bearer ' + token,
+            });
+
+            for (const token of ['duplicate.token.one', 'nested.token', 'escaped.token']) {
+              const before = centerCalls;
+              const d = await decide(token);
+              const made = centerCalls - before;
+              if (d.outcome !== 'reject' || d.status !== 503 || d.message !== MESSAGES.centerUnavailable) {
+                fail(token + ': expected 503 centerUnavailable, got ' + JSON.stringify(d));
+              } else if (made !== 1) fail(token + ': expected 1 center call, got ' + made);
+              else console.log('  ok  ' + token + ' -> 503, 1 center call');
+            }
+            const lane = await deriver.derive('Bearer duplicate.token.one');
+            if (lane !== 'background') fail('duplicate key lane: expected background, got ' + lane);
+            else console.log('  ok  duplicate key lane -> background');
+            const d = await decide('distinct.token');
+            if (d.outcome !== 'proceed' || d.identity.sub !== 'user_a') {
+              fail('the same key in two objects: expected proceed as user_a, got ' + JSON.stringify(d));
+            } else console.log('  ok  the same key in two objects -> proceed as user_a');
+
+            center.close();
+            if (process.exitCode) console.error('::error::the tarball reads a duplicated key');
+            else console.log('a duplicated key is a malformed answer, from the tarball');
+          });
+          JS
+          node runtime-duplicate-key.js

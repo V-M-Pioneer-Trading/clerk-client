@@ -1,5 +1,5 @@
 /**
- * @file All fifty-two conditions of meta's introspection fixture.
+ * @file All fifty-four conditions of meta's introspection fixture.
  *
  * Driven against a real local HTTP stub, one per case, so that what the client
  * sends is asserted on the wire and not against a mock of itself. Nothing here
@@ -69,7 +69,7 @@ describe("the vendored fixture", () => {
     // Belt and braces: if both the copy and SOURCE were edited together, this
     // literal still pins the bytes the implementation was reviewed against.
     expect(fixtureSha256()).toBe(
-      "5fe6d77e1113c05af899e554db0723a06cf42c197f9eb46a8b93b2f3c682201c"
+      "ffbb7aa932d8d8523da125a0ff9a93f1fd771d5a32841d7e03ee25ec7b1315b7"
     );
   });
 
@@ -86,6 +86,7 @@ describe("the vendored fixture", () => {
       "bearer-with-internal-whitespace",
       "center-rejects-our-caller-secret",
       "center-returns-500",
+      "center-returns-duplicate-key",
       "center-returns-malformed-json",
       "center-times-out",
       "center-unreachable",
@@ -116,7 +117,7 @@ describe("the vendored fixture", () => {
       "two-authorization-lines-second-empty",
       "visitor-on-public-get",
     ]);
-    expect(fixture.cases).toHaveLength(40);
+    expect(fixture.cases).toHaveLength(41);
   });
 
   it("holds exactly the gateway cases this suite implements", () => {
@@ -126,6 +127,7 @@ describe("the vendored fixture", () => {
       "gateway-active-operator-lacking-scope-key",
       "gateway-bearer-with-empty-token",
       "gateway-center-rejects-our-caller-secret",
+      "gateway-center-returns-duplicate-key",
       "gateway-center-unreachable",
       "gateway-inactive-token",
       "gateway-kind-machine-with-user-subject",
@@ -134,16 +136,17 @@ describe("the vendored fixture", () => {
       "gateway-non-bearer-scheme",
       "gateway-two-authorization-lines",
     ]);
-    expect(fixture.gatewayCases).toHaveLength(12);
+    expect(fixture.gatewayCases).toHaveLength(13);
   });
 
-  it("is fixture version 4, the one where two Authorization lines are no credential", () => {
+  it("is fixture version 5, the one where a duplicated key is a malformed answer", () => {
     // Version 1 declared default-deny on every non-GET method; version 2
     // exempted the safe methods; version 3 added answers with no `scope` key;
-    // version 4 added requests carrying more than one `Authorization` line.
+    // version 4 added requests carrying more than one `Authorization` line;
+    // version 5 added a center answer that names the same key twice.
     // A copy that fell back would silently stop asserting those cases, which
     // is the drift this number exists to make visible.
-    expect(fixture.version).toBe(4);
+    expect(fixture.version).toBe(5);
   });
 
   it("gives every case an authorization this suite knows how to send", () => {

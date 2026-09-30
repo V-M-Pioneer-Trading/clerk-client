@@ -16,6 +16,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   SECRET_HEADER,
 } from "./messages";
+import { parseStrictJson } from "./strictJson";
 import type { Identity, IntrospectionConfig, Kind } from "./types";
 
 /**
@@ -167,9 +168,16 @@ export function createIntrospector(config: IntrospectionConfig): Introspector {
         const text = await readCapped(response, maxBytes);
         if (text === null) return UNAVAILABLE;
 
+        // Strict, not JSON.parse: a key named twice in any object is a
+        // malformed answer (meta fixture v5, ts-introspection-client#6).
+        // JSON.parse lets the last value win, so {"sub":"a","sub":"b"} would
+        // proceed as b where the Java client (Jackson,
+        // STRICT_DUPLICATE_DETECTION, any depth) and the Go client (top-level
+        // members) refuse the body. The cap above runs first, so the parser
+        // never sees more than maxResponseBytes.
         let parsed: unknown;
         try {
-          parsed = JSON.parse(text);
+          parsed = parseStrictJson(text);
         } catch {
           return UNAVAILABLE;
         }

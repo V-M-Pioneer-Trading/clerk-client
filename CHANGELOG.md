@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.3 — 2026-09-30
+
+Bug fix, no API change. Conforms to `meta` fixture version 5. Part of
+V-M-Pioneer-Trading/meta#80.
+
+### Fixed
+
+- **A center answer naming the same key twice was read with the last value
+  winning (present in 1.0.0 through 1.1.2).** The body was parsed with
+  `JSON.parse`, so `{"active":true,"sub":"user_a","sub":"user_b",…}`
+  proceeded as `user_b`, where the Go and Java clients answer `503`. A
+  repeated key in any object, at any depth, compared after escapes are decoded
+  (`"sub"` and `"s\u0075b"` are one key), is now a malformed answer: `503`
+  `the authentication service could not process this request` on a calling
+  service and the `background` lane at the gateway, after one call to the
+  center. The same key in two different objects is still read. The body is
+  parsed by a small strict reader (`src/strictJson.ts`) that otherwise
+  accepts and builds exactly what `JSON.parse` does, still after the 64 KiB
+  cap; it refuses nesting deeper than 1000 levels, as Jackson does by default.
+  Not a bypass (the center is trusted and marshals a struct), but the three
+  clients now agree on the fixture's rule (#6). Any depth is the Java
+  client's rule (Jackson `STRICT_DUPLICATE_DETECTION`); the Go client checks
+  the top-level members only.
+
+### Changed
+
+- Fixture version 5 vendored (meta `aa877e7`, 41 + 13 cases); its two
+  duplicate-key cases also run through real Express with `createExpressAuth`
+  and through `createLaneDeriver`.
+
 ## 1.1.2 — 2026-09-26
 
 Security fix, plus one additive export. Conforms to `meta` fixture version 4.
