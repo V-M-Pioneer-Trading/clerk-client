@@ -7,17 +7,22 @@ V-M-Pioneer-Trading/meta#80 (auth-design decision 22).
 
 ### Added
 
-- **`createCentralM2MTokenSource({ url, secret, fetch?, now?, timeoutMs? })`
-  and `M2MTokenSource`**: the caller side of auth-service's machine-token
-  endpoint, a port of automation-service's `createClerkM2MTokenSource` with
-  the Clerk call replaced by one `POST` to the center (`X-Service-Secret`,
-  empty body, 1 s timeout). The token is cached in memory, refreshed once half
-  its lifetime (read from the unverified JWT's `iat`/`exp`) has passed, with a
-  single refresh in flight; a failed refresh serves the cached token until it
-  actually expires. One immediate retry after a `503` or a timeout, none after
-  a `401`, which is a configuration error that says the center did not
-  recognise this caller. Neither the secret nor the token appears in an error
-  or a log.
+- **`createCentralM2MTokenSource({ url, secret, fetch?, now?, timeoutMs? })`,
+  `M2MTokenSource` and `M2MTokenError`**: the caller side of auth-service's
+  machine-token endpoint, a port of automation-service's
+  `createClerkM2MTokenSource` with the Clerk call replaced by one `POST` to
+  the center (`X-M2M-Caller-Secret`, empty body, 1 s timeout). The token is
+  cached in memory and refreshed at `iat + (exp - iat) / 2`, read from the
+  unverified JWT, with a single refresh in flight. A failed refresh serves the
+  cached token until it expires and is not repeated for 10 s. One immediate
+  retry, after a timeout only (headers or body); never after a `503` or a
+  `401`. A `401` always throws, even with a valid cached token. Every failure
+  is an `M2MTokenError` with `kind` `"unknown-caller"`, `"unavailable"` or
+  `"malformed"`, so a caller can exit on the first and continue on the others;
+  `cause` on a transport failure carries only `code` and `name`. Options are
+  validated at construction. A token whose lifetime is not finite, not
+  positive, over 7 days, or already over is `malformed`. Neither the secret
+  nor the token appears in an error or a log.
 
 ## 1.1.3 — 2026-09-30
 
