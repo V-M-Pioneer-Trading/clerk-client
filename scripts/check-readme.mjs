@@ -35,7 +35,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const workDir = join(root, ".readme-check");
 
-const PACKAGE_NAME = "@v-m-pioneer-trading/introspection-client";
+const PACKAGE_NAME = "@v-m-pioneer-trading/clerk-client";
 
 /** Languages whose fences are claims about this package's API. */
 const CHECKED = new Set(["ts", "typescript", "js", "javascript"]);
