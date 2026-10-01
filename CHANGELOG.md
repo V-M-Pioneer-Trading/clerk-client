@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0
+## 2.0.0 — 2026-10-01
 
 Rename only, no API change. The package is now
 `@v-m-pioneer-trading/clerk-client` (formerly
