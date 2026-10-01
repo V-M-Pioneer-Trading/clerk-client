@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0
+
+Rename only, no API change. The package is now
+`@v-m-pioneer-trading/clerk-client` (formerly
+`@v-m-pioneer-trading/introspection-client`, 1.x) and the repository is
+V-M-Pioneer-Trading/clerk-client. Consumers change the dependency URL and the
+import path; every export is identical to 1.2.0. The release tarball is
+`v-m-pioneer-trading-clerk-client-2.0.0.tgz`.
+
 ## 1.2.0 — 2026-09-30
 
 New export, no change to anything existing. Part of

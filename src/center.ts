@@ -175,7 +175,7 @@ export function createIntrospector(config: IntrospectionConfig): Introspector {
         if (text === null) return UNAVAILABLE;
 
         // Strict, not JSON.parse: a key named twice in any object is a
-        // malformed answer (meta fixture v5, ts-introspection-client#6).
+        // malformed answer (meta fixture v5, clerk-client#6).
         // JSON.parse lets the last value win, so {"sub":"a","sub":"b"} would
         // proceed as b where the Java client (Jackson,
         // STRICT_DUPLICATE_DETECTION, any depth) and the Go client (top-level

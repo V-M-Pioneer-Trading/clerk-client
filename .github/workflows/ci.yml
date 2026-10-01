@@ -89,7 +89,7 @@ jobs:
           npm install "$tarball" > /dev/null
           # require() works, and every export is really there.
           node -e "
-            const c = require('@v-m-pioneer-trading/introspection-client');
+            const c = require('@v-m-pioneer-trading/clerk-client');
             for (const name of ['createAuthorizer','createExpressAuth','createLaneDeriver','loadIntrospectionConfig','isSafeMethod','MESSAGES','createCentralM2MTokenSource','M2MTokenError']) {
               if (typeof c[name] === 'undefined') throw new Error('missing export ' + name);
             }
@@ -123,7 +123,7 @@ jobs:
             type Decision,
             type Identity,
             type Lane,
-          } from "@v-m-pioneer-trading/introspection-client";
+          } from "@v-m-pioneer-trading/clerk-client";
 
           const config = { url: "http://localhost:3005/auth/v1/introspect", secret: "x" };
           const authorizer = createAuthorizer(config);
@@ -184,7 +184,7 @@ jobs:
             notFound,
             passthrough,
             secured,
-          } from "@v-m-pioneer-trading/introspection-client";
+          } from "@v-m-pioneer-trading/clerk-client";
 
           const auth = createExpressAuth({
             url: "http://localhost:3005/auth/v1/introspect",
@@ -261,7 +261,7 @@ jobs:
           node -e "
             const express = require('express');
             const { createExpressAuth, notFound, passthrough, secured } =
-              require('@v-m-pioneer-trading/introspection-client');
+              require('@v-m-pioneer-trading/clerk-client');
             const auth = createExpressAuth({ url: 'http://localhost:3005/auth/v1/introspect', secret: 'x' });
             const handler = (_req, res) => res.json({});
             const refuses = (what, fn) => {
@@ -319,7 +319,7 @@ jobs:
             createExpressAuth,
             notFound,
             secured,
-          } = require('@v-m-pioneer-trading/introspection-client');
+          } = require('@v-m-pioneer-trading/clerk-client');
 
           // A stand-in auth-service. `session.token` is an active session with
           // NO scopes, which is what separates a 200 from a 403 below.
@@ -427,7 +427,7 @@ jobs:
             createLaneDeriver,
             secured,
             soleAuthorizationLine,
-          } = require('@v-m-pioneer-trading/introspection-client');
+          } = require('@v-m-pioneer-trading/clerk-client');
 
           const ACTIVE = (sub) => ({
             active: true, sub, kind: 'operator', scope: 'fleet:control', exp: 4102444800,
@@ -576,7 +576,7 @@ jobs:
             MESSAGES,
             createAuthorizer,
             createLaneDeriver,
-          } = require('@v-m-pioneer-trading/introspection-client');
+          } = require('@v-m-pioneer-trading/clerk-client');
 
           // Keyed on the token. The first body is the fixture's
           // center-returns-duplicate-key answer, byte for byte.

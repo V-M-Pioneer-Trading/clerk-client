@@ -3,7 +3,7 @@
  *
  * `JSON.parse` lets the last value of a repeated key win, so
  * `{"sub":"a","sub":"b"}` is user b. A strict reader refuses that body, so the
- * identity would depend on which parser read it (ts-introspection-client#6,
+ * identity would depend on which parser read it (clerk-client#6,
  * meta fixture version 5). navigation-service's Java client parses with
  * Jackson's `STRICT_DUPLICATE_DETECTION`, which refuses a repeated key in any
  * object at any depth; agent-service's Go client refuses one among the

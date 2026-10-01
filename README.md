@@ -1,4 +1,7 @@
-# @v-m-pioneer-trading/introspection-client
+# @v-m-pioneer-trading/clerk-client
+
+> **Renamed.** Formerly `@v-m-pioneer-trading/introspection-client` (1.x). Same API:
+> change the dependency URL and the import path, nothing else.
 
 The TypeScript half of "one verifier". [auth-design decision 21][d21] makes
 auth-service the only component that verifies a token; everyone else asks it
@@ -24,7 +27,7 @@ URL, which `package-lock.json` records with an integrity hash, so the Docker
 build needs no token and no git.
 
 ```sh
-npm install https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.2.0/v-m-pioneer-trading-introspection-client-1.2.0.tgz
+npm install https://github.com/V-M-Pioneer-Trading/clerk-client/releases/download/v2.0.0/v-m-pioneer-trading-clerk-client-2.0.0.tgz
 ```
 
 ## Quick start
@@ -37,7 +40,7 @@ import {
   loadIntrospectionConfig,
   notFound,
   secured,
-} from "@v-m-pioneer-trading/introspection-client";
+} from "@v-m-pioneer-trading/clerk-client";
 
 const auth = createExpressAuth(loadIntrospectionConfig()); // throws, naming a missing env var
 const app = secured(express());
@@ -409,7 +412,7 @@ side.
 import {
   createCentralM2MTokenSource,
   M2MTokenError,
-} from "@v-m-pioneer-trading/introspection-client";
+} from "@v-m-pioneer-trading/clerk-client";
 
 const tokens = createCentralM2MTokenSource({
   url: "http://localhost:3005/auth/v1/m2m-token",
@@ -543,7 +546,7 @@ import {
   bearerFrom,
   createLaneDeriver,
   soleAuthorizationLine,
-} from "@v-m-pioneer-trading/introspection-client";
+} from "@v-m-pioneer-trading/clerk-client";
 
 // What Node hands a handler for `Authorization: Bearer a` + `authorization: Bearer b`.
 const rawHeaders = ["Host", "localhost", "Authorization", "Bearer a", "authorization", "Bearer b"];
