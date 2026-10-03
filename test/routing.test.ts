@@ -31,7 +31,7 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import express, { type Express } from "express";
+import express, { type Express, type Response } from "express";
 import request from "supertest";
 
 import {
@@ -78,7 +78,7 @@ beforeAll(async () => {
   center.listen(0, "127.0.0.1");
   await once(center, "listening");
   const { port } = center.address() as AddressInfo;
-  centerUrl = `http://127.0.0.1:${port}/auth/v1/introspect`;
+  centerUrl = `http://127.0.0.1:${String(port)}/auth/v1/introspect`;
 });
 
 afterAll(async () => {
@@ -95,7 +95,7 @@ beforeEach(() => {
   sideEffects = [];
 });
 
-const mutatingHandler = (name: string) => (_req: unknown, res: any): void => {
+const mutatingHandler = (name: string) => (_req: unknown, res: Response): void => {
   sideEffects.push(name);
   res.json({ ran: name });
 };
@@ -274,7 +274,7 @@ describe("6. HEAD is governed by its GET route's declaration", () => {
     // the existence of the route and the size of its body. (Express computes
     // an ETag for the 401 envelope too, so the assertion is that the
     // HANDLER's one never got out, not that no ETag exists.)
-    expect(response.headers["etag"]).not.toBe('W/"leaky"');
+    expect(response.headers.etag).not.toBe('W/"leaky"');
   });
 
   it("401s a HEAD on the trailing-slash and case-variant spellings too", async () => {
@@ -298,7 +298,7 @@ describe("6. HEAD is governed by its GET route's declaration", () => {
       .head("/api/ships")
       .set("Authorization", "Bearer operator.token");
     expect(response.status).toBe(200);
-    expect(response.headers["etag"]).toBe('W/"leaky"');
+    expect(response.headers.etag).toBe('W/"leaky"');
   });
 });
 
@@ -364,7 +364,7 @@ describe("7. an undeclared route is refused on every method", () => {
 // ---------------------------------------------------------------------------
 
 describe("8. secured() refuses an undeclared handler at registration time", () => {
-  const handler = (_req: unknown, res: any): void => {
+  const handler = (_req: unknown, res: Response): void => {
     res.json({ ran: true });
   };
 
@@ -384,7 +384,7 @@ describe("8. secured() refuses an undeclared handler at registration time", () =
         string,
         (...args: unknown[]) => unknown
       >;
-      expect(() => api[method]!("/x", handler)).toThrow(
+      expect(() => api[method]?.("/x", handler)).toThrow(
         /without an authorization declaration/
       );
     }
@@ -456,7 +456,8 @@ describe("8. secured() refuses an undeclared handler at registration time", () =
     const onError = (
       err: unknown,
       _req: unknown,
-      res: any,
+      res: Response,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused one must stay
       _next: unknown
     ): void => {
       res.status(500).json({ error: { message: String(err) } });
@@ -586,7 +587,7 @@ describe("9. Express's automatic OPTIONS never reaches the declaration", () => {
       .set("Authorization", "Bearer operator.token");
 
     expect(response.status).toBe(200);
-    expect(response.headers["allow"]).toContain("GET");
+    expect(response.headers.allow).toContain("GET");
     expect(sideEffects).toEqual([]);
     expect(calls).toEqual([]);
   });

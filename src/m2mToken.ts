@@ -198,7 +198,7 @@ export function createCentralM2MTokenSource(options: CentralM2MTokenOptions): M2
       }
       throw new M2MTokenError(
         "unavailable",
-        `the authentication service answered the token request with status ${res.status}`
+        `the authentication service answered the token request with status ${String(res.status)}`
       );
     }
     let body: unknown;

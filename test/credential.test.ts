@@ -59,7 +59,7 @@ const startEchoCenter = async (): Promise<{
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
-    url: `http://127.0.0.1:${port}/auth/v1/introspect`,
+    url: `http://127.0.0.1:${String(port)}/auth/v1/introspect`,
     seen,
     close: async () => {
       server.closeAllConnections();

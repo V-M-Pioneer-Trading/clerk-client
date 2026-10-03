@@ -123,7 +123,10 @@ const readCapped = async (response: Response, limit: number): Promise<string | n
   let size = 0;
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      // The stream's chunk type is `any` in the lib typings; a fetch body
+      // yields Uint8Array chunks.
+      const result: { done: boolean; value?: Uint8Array } = await reader.read();
+      const { done, value } = result;
       if (done) break;
       if (value === undefined) continue;
       size += value.byteLength;
@@ -165,7 +168,7 @@ export function createIntrospector(config: IntrospectionConfig): Introspector {
       // The budget covers the body read as well as the response headers: a
       // center that answers instantly and then dribbles bytes forever is as
       // unavailable as one that never answers.
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
 
       try {
         // Resolved per call rather than captured at module load, so a host

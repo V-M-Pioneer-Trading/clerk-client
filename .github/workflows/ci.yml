@@ -32,6 +32,10 @@ jobs:
 
       - run: npm ci
 
+      # Shared ESLint config (meta#105). --max-warnings 0 is in the script, so a
+      # warning fails here exactly like an error.
+      - run: npm run lint
+
       # ts-jest only typechecks what a test imports, so without this a type
       # error in an unreferenced file reaches main.
       - run: npm run typecheck

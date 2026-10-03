@@ -195,6 +195,7 @@ const scanAuthorization = (
 ): { readonly lines: number; readonly first: string | null } => {
   const unknowable = { lines: Number.POSITIVE_INFINITY, first: null };
   const rawHeaders: unknown =
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard for untyped (JavaScript) callers passing null; failing closed to unknowable is the point
     typeof request === "object" && request !== null ? request.rawHeaders : undefined;
   if (!Array.isArray(rawHeaders) || rawHeaders.length % 2 !== 0) return unknowable;
   if (rawHeaders.length >= rawHeaderEntryCap(request.socket)) return unknowable;

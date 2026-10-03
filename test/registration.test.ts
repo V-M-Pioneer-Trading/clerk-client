@@ -21,7 +21,7 @@
 
 import { METHODS } from "node:http";
 
-import express, { type Express } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
 
 import type { CenterAnswer } from "../src/center";
@@ -61,7 +61,7 @@ beforeEach(() => {
 });
 const handler =
   (name = "handler") =>
-  (_req: unknown, res: any): void => {
+  (_req: unknown, res: Response): void => {
     ran.push(name);
     res.json({ ran: name });
   };
@@ -121,7 +121,7 @@ describe("B1. a route's declaration must come first", () => {
     const api = secured(express.Router());
     const parse = passthrough(express.json(), "parses bodies; never answers");
     const log = passthrough(
-      (_req: any, _res: any, next: any) => next(),
+      (_req: Request, _res: Response, next: NextFunction) => { next(); },
       "logs; never answers"
     );
     expect(() =>
@@ -130,7 +130,7 @@ describe("B1. a route's declaration must come first", () => {
 
     // The same middleware without the vouching is refused: `secured()` cannot
     // tell a logger from a route, and the whole point is that it must not guess.
-    const unvouched = (_req: any, _res: any, next: any): void => next();
+    const unvouched = (_req: Request, _res: Response, next: NextFunction): void => { next(); };
     expect(() =>
       api.post("/b", unvouched as never, auth().requireSession(), handler())
     ).toThrow(/before its authorization declaration/);
@@ -300,7 +300,7 @@ describe("B2. use() accepts the constructs the three consumers have", () => {
     const app = secured(express());
     expect(() =>
       app.use(
-        notFound((_req: any, res: any) =>
+        notFound((_req: Request, res: Response) =>
           res.status(404).json({ error: { message: "not found" } })
         )
       )
@@ -312,10 +312,10 @@ describe("B2. use() accepts the constructs the three consumers have", () => {
     // handler; both are third-party and neither can be branded.
     const app = secured(express());
     const serve = [
-      (_req: any, _res: any, next: any) => next(),
-      (_req: any, _res: any, next: any) => next(),
+      (_req: Request, _res: Response, next: NextFunction) => { next(); },
+      (_req: Request, _res: Response, next: NextFunction) => { next(); },
     ];
-    const setup = (_req: any, res: any) => res.send("<html/>");
+    const setup = (_req: Request, res: Response) => res.send("<html/>");
     expect(() =>
       app.use("/swagger", a().allowPublic(), serve as never, setup as never)
     ).not.toThrow();
@@ -330,7 +330,8 @@ describe("B2. use() accepts the constructs the three consumers have", () => {
 
   it("5. an error handler, which Express only ever calls with an error in hand", () => {
     const app = secured(express());
-    const onError = (err: unknown, _req: any, res: any, _next: any): void => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
+    const onError = (err: unknown, _req: Request, res: Response, _next: NextFunction): void => {
       res.status(500).json({ error: { message: String(err) } });
     };
     expect(() => app.use(onError as never)).not.toThrow();
@@ -415,7 +416,7 @@ describe("B2. a declared mount still has to put the declaration first", () => {
 
 describe("B2. notFound() is terminal", () => {
   const terminal = () =>
-    notFound((_req: any, res: any) => {
+    notFound((_req: Request, res: Response) => {
       ran.push("notFound");
       res.status(404).json({ error: { message: "not found" } });
     });
@@ -441,7 +442,8 @@ describe("B2. notFound() is terminal", () => {
     const api = secured(express.Router());
     api.use(terminal());
 
-    const onError = (_e: unknown, _req: any, res: any, _n: any): void => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
+    const onError = (_e: unknown, _req: Request, res: Response, _n: NextFunction): void => {
       res.status(500).end();
     };
     expect(() => api.use(onError as never)).not.toThrow();
@@ -566,19 +568,19 @@ describe("S3. one inbound request asks the center at most once", () => {
     const { auth: counting, calls } = countingAuth();
     const application = express();
     application.use(
-      passthrough((_req: any, _res: any, next: any) => next(), "does nothing")
+      passthrough((_req: Request, _res: Response, next: NextFunction) => { next(); }, "does nothing")
     );
     const api = express.Router();
     api.use(counting.guard(() => "session"));
     // A middleware that rewrites the credential between the two enforcement
     // points. Contrived, and precisely what the key exists to survive.
-    api.use((req: any, _res: any, next: any) => {
+    api.use((req: Request, _res: Response, next: NextFunction) => {
       // The adapter reads the credential from rawHeaders (a rewrite of
       // req.headers or req.header() is ignored), so that is what changes.
       const kept: string[] = [];
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         if (String(req.rawHeaders[i]).toLowerCase() === "authorization") continue;
-        kept.push(req.rawHeaders[i], req.rawHeaders[i + 1]);
+        kept.push(req.rawHeaders[i] ?? "", req.rawHeaders[i + 1] ?? "");
       }
       req.rawHeaders = [...kept, "Authorization", "Bearer second.token"];
       next();
@@ -611,9 +613,9 @@ describe("B3. no alias reaches the unpatched route methods", () => {
   it("refuses app.del(), undeclared or declared, and serves nothing", async () => {
     const app = secured(express());
     const loose = app as unknown as Loose;
-    expect(() => loose["del"]!("/d", handler("undeclared"))).toThrow(DEL_REFUSED);
+    expect(() => loose.del?.("/d", handler("undeclared"))).toThrow(DEL_REFUSED);
     expect(() =>
-      loose["del"]!("/d", auth().requireScope("fleet:control"), handler("declared"))
+      loose.del?.("/d", auth().requireScope("fleet:control"), handler("declared"))
     ).toThrow(/Use delete\(\.\.\.\)/);
 
     const response = await request(app)
@@ -626,9 +628,9 @@ describe("B3. no alias reaches the unpatched route methods", () => {
   it("refuses router.del() and route().del() the same way", async () => {
     const router = secured(express.Router());
     const loose = router as unknown as Loose;
-    expect(() => loose["del"]!("/d", handler())).toThrow(DEL_REFUSED);
+    expect(() => loose.del?.("/d", handler())).toThrow(DEL_REFUSED);
     const route = router.route("/r") as unknown as Loose;
-    expect(() => route["del"]!(handler())).toThrow(/deprecated alias for delete\(\)/);
+    expect(() => route.del?.(handler())).toThrow(/deprecated alias for delete\(\)/);
 
     const app = secured(express());
     app.use(router);
@@ -659,7 +661,7 @@ describe("B3. no alias reaches the unpatched route methods", () => {
     // property proves nothing; identity with Express's original does.
     const unsecured = express.Router();
     const routeProto = Object.getPrototypeOf(unsecured.route("/p")) as Loose;
-    const originals: ReadonlyArray<[string, Loose, Loose]> = [
+    const originals: readonly [string, Loose, Loose][] = [
       ["app", secured(express()) as unknown as Loose, express.application as unknown as Loose],
       ["router", secured(express.Router()) as unknown as Loose, Object.getPrototypeOf(unsecured) as Loose],
       ["route", secured(express.Router()).route("/z") as unknown as Loose, routeProto],
@@ -676,7 +678,7 @@ describe("B3. no alias reaches the unpatched route methods", () => {
     }
     expect(stillOriginal).toEqual([]);
     // app.del exists in Express 4, so it was among the names checked.
-    expect(typeof (express.application as unknown as Loose)["del"]).toBe("function");
+    expect(typeof (express.application as unknown as Loose).del).toBe("function");
     expect(checked).toBeGreaterThan(3 * 30);
   });
 });

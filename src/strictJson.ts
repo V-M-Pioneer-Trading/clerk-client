@@ -58,7 +58,7 @@ class Reader {
   }
 
   private fail(what: string): never {
-    throw new SyntaxError(`${what} at position ${this.pos}`);
+    throw new SyntaxError(`${what} at position ${String(this.pos)}`);
   }
 
   private skipWhitespace(): void {

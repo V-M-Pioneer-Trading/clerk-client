@@ -290,18 +290,18 @@ export interface GuardContext {
 /** Handlers that carry a route declaration, and what they declare. */
 const declarations = new WeakMap<object, DeclaredRequirement>();
 /** Router-level guards: a blanket declaration for everything behind them. */
-const guards = new WeakSet<object>();
+const guards = new WeakSet();
 /**
  * The subset of {@link declarations} made by `ignoreCredentials()`, which are
  * accepted only where every method the registration covers is safe.
  */
-const credentialIgnorers = new WeakSet<object>();
+const credentialIgnorers = new WeakSet();
 /** Handlers a caller has explicitly vouched for as not being a route. */
-const passthroughs = new WeakSet<object>();
+const passthroughs = new WeakSet();
 /** Terminal not-found handlers: they serve no resource, so they declare none. */
-const terminals = new WeakSet<object>();
+const terminals = new WeakSet();
 /** Routers, apps and routes already wrapped by {@link secured}. */
-const securedTargets = new WeakSet<object>();
+const securedTargets = new WeakSet();
 
 /** Both spellings of "this handler decides whether the request may proceed". */
 const isDeclaration = (value: unknown): boolean =>
@@ -413,16 +413,16 @@ export function notFound<H>(handler: H): H {
   const inner = handler as unknown as HandlerLike;
 
   const wrapper: HandlerLike = (req, res, next) => {
-    const setStatus = res.status.bind(res) as (code: number) => ResponseLike;
+    const setStatus = res.status.bind(res);
     const mutable = res as unknown as Record<string, unknown>;
     const hadOwnStatus = Object.prototype.hasOwnProperty.call(res, "status");
-    const ownStatus = mutable["status"];
+    const ownStatus = mutable.status;
     let restored = false;
     const restore = (): void => {
       if (restored) return;
       restored = true;
-      if (hadOwnStatus) mutable["status"] = ownStatus;
-      else delete mutable["status"];
+      if (hadOwnStatus) mutable.status = ownStatus;
+      else delete mutable.status;
     };
 
     setStatus(404);
@@ -430,7 +430,7 @@ export function notFound<H>(handler: H): H {
     // instruction. Clamped rather than thrown: the caller gets its 404 and the
     // request still ends, which is the safe reading of a handler that has
     // already been told it is answering "not found".
-    mutable["status"] = (code: unknown): ResponseLike =>
+    mutable.status = (code: unknown): ResponseLike =>
       setStatus(typeof code === "number" && code >= 400 ? code : 404);
 
     try {
@@ -441,6 +441,7 @@ export function notFound<H>(handler: H): H {
         next(err);
       });
     } finally {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `restored` is set by restore() in a closure; TypeScript narrows it to false here and cannot see the write
       if (!restored) {
         const current = res.statusCode;
         if (
@@ -823,7 +824,7 @@ function secureTarget<T extends object>(target: T, isRoute: boolean): T {
   // keeping, and one route method with two spellings is one more thing to
   // audit. Installed on routers and routes too, which have no `del` of their
   // own, so the spelling means the same thing on every secured target.
-  record["del"] = (...args: unknown[]): never => {
+  record.del = (...args: unknown[]): never => {
     throw new Error(
       `${name}.del(${describePath(args[0])}) is Express 4's deprecated alias for delete(), and is refused.\n\n` +
         "It calls the delete() Express captured when it loaded, not the one\n" +
@@ -833,10 +834,10 @@ function secureTarget<T extends object>(target: T, isRoute: boolean): T {
     );
   };
 
-  const originalUse = record["use"];
+  const originalUse = record.use;
   if (typeof originalUse === "function") {
     const call = originalUse.bind(target) as (...args: unknown[]) => unknown;
-    record["use"] = (...args: unknown[]): unknown => {
+    record.use = (...args: unknown[]): unknown => {
       const where = `${name}.use(${describePath(args[0])})`;
       assertNotTerminated(state, where, args, true);
       assertUseSafe(args, name);
@@ -851,13 +852,13 @@ function secureTarget<T extends object>(target: T, isRoute: boolean): T {
   // `router.route("/x").get(handler)` registers a route without going through
   // `router.get`, so the returned Route is secured too — otherwise it is a
   // hole in the shape of a chaining style somebody prefers.
-  const originalRoute = record["route"];
+  const originalRoute = record.route;
   if (typeof originalRoute === "function") {
     const call = originalRoute.bind(target) as (...args: unknown[]) => unknown;
-    record["route"] = (...args: unknown[]): unknown => {
+    record.route = (...args: unknown[]): unknown => {
       const route = call(...args);
       return typeof route === "object" && route !== null
-        ? secureTarget(route as object, true)
+        ? secureTarget(route, true)
         : route;
     };
   }
@@ -871,12 +872,12 @@ const targetName = (
   isRoute: boolean
 ): string => {
   if (isRoute) {
-    return typeof record["path"] === "string"
-      ? `route(${record["path"] as string})`
+    return typeof record.path === "string"
+      ? `route(${record.path})`
       : "route";
   }
-  return typeof record["name"] === "string" && record["name"].length > 0
-    ? (record["name"] as string)
+  return typeof record.name === "string" && record.name.length > 0
+    ? record.name
     : "router";
 };
 
@@ -1000,7 +1001,8 @@ export function createExpressAuth(
     return createAuthorizer({
       introspect: (token) => {
         const memo = state.memo;
-        if (memo !== undefined && memo.digest === digest) return memo.answer;
+        if (memo?.digest === digest) return memo.answer;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- exactly one of injected/introspector is set above, and the early return handles injected
         const answer = introspector!.introspect(token);
         state.memo = { digest, answer };
         return answer;
@@ -1042,13 +1044,13 @@ export function createExpressAuth(
 
       authorizerFor(res, authorization)
         .authorize({ method: req.method, requires, authorization })
-        .then((decision) => apply(res, decision, next))
+        .then((decision) => { apply(res, decision, next); })
         // The authorizer is written not to reject; if a host's injected
         // introspector does, the request must still fail closed rather than
         // hand Express an unhandled promise. `next(err)` and not `next()`:
         // passing no error would run the handler the guard just failed to
         // authorize.
-        .catch(() => next(new Error("introspection failed")));
+        .catch(() => { next(new Error("introspection failed")); });
     };
   };
 

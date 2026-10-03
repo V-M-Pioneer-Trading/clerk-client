@@ -49,7 +49,6 @@ import {
 import {
   assertKnownCenterKeys,
   startStubCenter,
-  type CenterSpec,
   type StubCenter,
 } from "./support/stubCenter";
 
@@ -203,7 +202,7 @@ const withCase = async (
 ): Promise<void> => {
   assertKnownExpectKeys(testCase.name, testCase.expect);
   assertKnownCenterKeys(testCase.name, testCase.center);
-  const stub = await startStubCenter(testCase.center as CenterSpec);
+  const stub = await startStubCenter(testCase.center);
   try {
     await run(stub);
   } finally {
@@ -348,7 +347,7 @@ const decideOverTheWire = async (
     return {
       outcome: "reject",
       status: status as 401 | 403 | 500 | 503,
-      message: error?.message ?? `no error envelope on a ${status}`,
+      message: error?.message ?? `no error envelope on a ${String(status)}`,
     };
   } finally {
     server.closeAllConnections();
@@ -401,7 +400,7 @@ const tokenOf = (testCase: FixtureCase): string | null => {
 
 describe("calling-service cases", () => {
   for (const testCase of fixture.cases) {
-    it(`${testCase.name}: ${testCase.why.split(".")[0]}`, async () => {
+    it(`${testCase.name}: ${testCase.why.split(".")[0] ?? ""}`, async () => {
       await withCase(testCase, async (stub) => {
         const counter = countFetches();
         let decision: Decision;
@@ -429,7 +428,7 @@ describe("calling-service cases", () => {
         if (expected.outcome === "proceed") {
           if (decision.outcome !== "proceed") {
             throw new Error(
-              `expected proceed, got ${decision.status} ${decision.message}`
+              `expected proceed, got ${String(decision.status)} ${decision.message}`
             );
           }
           expect(decision.identity).toEqual(expected.identity);
@@ -459,7 +458,7 @@ describe("calling-service cases", () => {
 
 describe("gateway lane cases", () => {
   for (const testCase of fixture.gatewayCases) {
-    it(`${testCase.name}: ${testCase.why.split(".")[0]}`, async () => {
+    it(`${testCase.name}: ${testCase.why.split(".")[0] ?? ""}`, async () => {
       await withCase(testCase, async (stub) => {
         const counter = countFetches();
         let lane: string;
