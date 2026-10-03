@@ -58,19 +58,19 @@ describe("splitScopes", () => {
     ["VT", "\u000b"],
     ["FF", "\u000c"],
     ["NEXT LINE", "\u0085"],
-    ["NO-BREAK SPACE", " "],
-    ["OGHAM SPACE MARK", " "],
-    ["MONGOLIAN VOWEL SEPARATOR", "᠎"],
+    ["NO-BREAK SPACE", "\u00a0"],
+    ["OGHAM SPACE MARK", "\u1680"],
+    ["MONGOLIAN VOWEL SEPARATOR", "\u180e"],
     ...Array.from({ length: 11 }, (_, i): [string, string] => [
       `U+${(0x2000 + i).toString(16).toUpperCase()}`,
       String.fromCharCode(0x2000 + i),
     ]),
-    ["LINE SEPARATOR", " "],
-    ["PARAGRAPH SEPARATOR", " "],
-    ["NARROW NO-BREAK SPACE", " "],
-    ["MEDIUM MATHEMATICAL SPACE", " "],
-    ["IDEOGRAPHIC SPACE", "　"],
-    ["ZERO WIDTH NO-BREAK SPACE", "﻿"],
+    ["LINE SEPARATOR", "\u2028"],
+    ["PARAGRAPH SEPARATOR", "\u2029"],
+    ["NARROW NO-BREAK SPACE", "\u202f"],
+    ["MEDIUM MATHEMATICAL SPACE", "\u205f"],
+    ["IDEOGRAPHIC SPACE", "\u3000"],
+    ["ZERO WIDTH NO-BREAK SPACE", "\ufeff"],
   ];
 
   it.each(notSeparators)("keeps %s inside the token", (_name, c) => {
