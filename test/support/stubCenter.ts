@@ -82,9 +82,9 @@ export async function startStubCenter(spec: CenterSpec): Promise<StubCenter> {
     // fetch spy, since there is no server here to count for us.
     const port = await closedPort();
     return {
-      url: `http://127.0.0.1:${port}${ENDPOINT_PATH}`,
+      url: `http://127.0.0.1:${String(port)}${ENDPOINT_PATH}`,
       requests: [],
-      close: async () => undefined,
+      close: () => Promise.resolve(),
     };
   }
 
@@ -98,7 +98,7 @@ export async function startStubCenter(spec: CenterSpec): Promise<StubCenter> {
         url: req.url ?? "",
         contentType: req.headers["content-type"],
         secretHeader: req.headers["x-introspection-secret"] as string | undefined,
-        accept: req.headers["accept"] as string | undefined,
+        accept: req.headers.accept,
         body: await readBody(req),
       });
 
@@ -125,7 +125,7 @@ export async function startStubCenter(spec: CenterSpec): Promise<StubCenter> {
   const { port } = server.address() as AddressInfo;
 
   return {
-    url: `http://127.0.0.1:${port}${ENDPOINT_PATH}`,
+    url: `http://127.0.0.1:${String(port)}${ENDPOINT_PATH}`,
     requests,
     close: async () => {
       // A delayed answer nobody is waiting for would otherwise hold the suite
@@ -152,7 +152,7 @@ export async function startOversizedCenter(bytes: number): Promise<StubCenter> {
         url: req.url ?? "",
         contentType: req.headers["content-type"],
         secretHeader: req.headers["x-introspection-secret"] as string | undefined,
-        accept: req.headers["accept"] as string | undefined,
+        accept: req.headers.accept,
         body: await readBody(req),
       });
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -166,7 +166,7 @@ export async function startOversizedCenter(bytes: number): Promise<StubCenter> {
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return {
-    url: `http://127.0.0.1:${port}${ENDPOINT_PATH}`,
+    url: `http://127.0.0.1:${String(port)}${ENDPOINT_PATH}`,
     requests,
     close: async () => {
       server.closeAllConnections();
@@ -196,7 +196,7 @@ export async function startRedirectingCenter(): Promise<
         url: req.url ?? "",
         contentType: req.headers["content-type"],
         secretHeader: req.headers["x-introspection-secret"] as string | undefined,
-        accept: req.headers["accept"] as string | undefined,
+        accept: req.headers.accept,
         body: await readBody(req),
       });
       res.writeHead(302, { Location: destination.url });
@@ -208,7 +208,7 @@ export async function startRedirectingCenter(): Promise<
   const { port } = server.address() as AddressInfo;
 
   return {
-    url: `http://127.0.0.1:${port}${ENDPOINT_PATH}`,
+    url: `http://127.0.0.1:${String(port)}${ENDPOINT_PATH}`,
     requests,
     destination,
     close: async () => {

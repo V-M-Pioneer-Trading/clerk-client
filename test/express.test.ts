@@ -16,7 +16,7 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import express, { type Express, type RequestHandler } from "express";
+import express, { type Express, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import request from "supertest";
 
 import {
@@ -86,7 +86,7 @@ beforeAll(async () => {
   center.listen(0, "127.0.0.1");
   await once(center, "listening");
   const { port } = center.address() as AddressInfo;
-  centerUrl = `http://127.0.0.1:${port}/auth/v1/introspect`;
+  centerUrl = `http://127.0.0.1:${String(port)}/auth/v1/introspect`;
 });
 
 afterAll(async () => {
@@ -186,7 +186,7 @@ describe("router-level guard (fleet-service's shape)", () => {
       .get("/api/fleet/v1/cooldown")
       .set("Authorization", "Bearer guest.token");
     expect(read.status).toBe(200);
-    expect(read.body.actor).toBe("user_guest");
+    expect((read.body as Record<string, unknown>).actor).toBe("user_guest");
 
     const write = await request(fleetApp())
       .post("/api/fleet/v1/ships/navigate")
@@ -315,11 +315,11 @@ const runHandler = (
           req.authorization === undefined ? [] : ["Authorization", req.authorization],
       },
       res,
-      (error?: unknown) => finish(true, error)
+      (error?: unknown) => { finish(true, error); }
     );
     // A rejection answers on `res` instead of calling next; give the timers
     // and the microtask queue a turn before concluding nothing happened.
-    setTimeout(() => finish(false, undefined), 100);
+    setTimeout(() => { finish(false, undefined); }, 100);
   });
 
 describe("safe methods (meta fixture v2)", () => {
@@ -403,7 +403,7 @@ describe("safe methods (meta fixture v2)", () => {
       .set("Origin", "https://dashboard.example")
       .set("Access-Control-Request-Method", "POST");
     expect(response.status).toBe(200);
-    expect(response.headers["allow"]).toContain("POST");
+    expect(response.headers.allow).toContain("POST");
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
@@ -438,7 +438,7 @@ describe("safe methods (meta fixture v2)", () => {
 
     const response = await request(app).post("/targets");
     expect(response.status).toBe(401);
-    expect(response.body.ran).toBeUndefined();
+    expect((response.body as Record<string, unknown>).ran).toBeUndefined();
   });
 
   it("compares the method case-insensitively", async () => {
@@ -485,7 +485,7 @@ describe("a guard that cannot do its job fails closed", () => {
       .post("/targets")
       .set("Authorization", "Bearer operator.token");
     expect(response.status).toBeGreaterThanOrEqual(500);
-    expect(response.body.ran).toBeUndefined();
+    expect((response.body as Record<string, unknown>).ran).toBeUndefined();
     expect(response.text).not.toContain('"ran"');
   });
 
@@ -505,7 +505,7 @@ describe("a guard that cannot do its job fails closed", () => {
       .post("/targets")
       .set("Authorization", "Bearer operator.token");
     expect(response.status).toBeGreaterThanOrEqual(500);
-    expect(response.body.ran).toBeUndefined();
+    expect((response.body as Record<string, unknown>).ran).toBeUndefined();
   });
 
   it("passes the error to next() rather than calling next() bare", async () => {
@@ -538,7 +538,7 @@ describe("a guard that cannot do its job fails closed", () => {
     expect(response.body).toEqual({
       error: { message: MESSAGES.undeclaredRoute },
     });
-    expect(response.body.ran).toBeUndefined();
+    expect((response.body as Record<string, unknown>).ran).toBeUndefined();
   });
 
   it("500s a throwing resolver on EVERY method, safe ones included", async () => {
@@ -625,11 +625,11 @@ describe("there is one source of truth for the identity", () => {
       .get("/whoami")
       .set("Authorization", "Bearer disagreeing.token");
     expect(response.status).toBe(200);
-    expect(response.body.locals).toEqual([]);
-    expect(response.body.serialised).toBe("{}");
+    expect((response.body as Record<string, unknown>).locals).toEqual([]);
+    expect((response.body as Record<string, unknown>).serialised).toBe("{}");
     // The center said machine for a `user_` subject, and that is what is read.
-    expect(response.body.kindOf).toBe("machine");
-    expect(response.body.actorOf).toBe("user_operator");
+    expect((response.body as Record<string, unknown>).kindOf).toBe("machine");
+    expect((response.body as Record<string, unknown>).actorOf).toBe("user_operator");
   });
 
   it("records what the route declared, and null when it declared nothing", async () => {
@@ -668,7 +668,8 @@ describe("passthrough()", () => {
   });
 
   it("preserves the arity of an error handler it is given", () => {
-    const onError = (_e: unknown, _req: any, _res: any, _n: any): void => {};
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
+    const onError = (_e: unknown, _req: Request, _res: Response, _n: NextFunction): void => {};
     expect(passthrough(onError, "logs errors; never answers").length).toBe(4);
   });
 
@@ -677,7 +678,7 @@ describe("passthrough()", () => {
     const inner = (a: unknown, b: unknown, c: unknown): void => {
       seen.push(a, b, c);
     };
-    passthrough(inner, "records")(1 as never, 2 as never, 3 as never);
+    passthrough(inner, "records")(1, 2, 3);
     expect(seen).toEqual([1, 2, 3]);
   });
 });

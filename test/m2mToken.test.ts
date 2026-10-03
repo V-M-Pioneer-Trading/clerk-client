@@ -25,7 +25,7 @@ const TOKEN_B = lived(T0 + HALF, T0 + HALF + LIFETIME, "B");
 
 /** The center's 200: expires_at is the token's own exp, as the contract says. */
 const ok = (token: string): Response => {
-  const exp = (JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as { exp?: number }).exp;
+  const exp = (JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()) as { exp?: number }).exp;
   return new Response(JSON.stringify({ token, expires_at: exp }), { status: 200 });
 };
 const status = (code: number): Response => new Response(JSON.stringify({ error: "x" }), { status: code });
@@ -37,13 +37,13 @@ const bodyTimeout = (): Response =>
 
 type Step = Response | Error;
 const script = (...steps: Step[]) => {
-  const calls: Array<{ url: string; init: RequestInit }> = [];
-  const fetchMock = (async (url: string, init: RequestInit) => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const fetchMock = ((url: string, init: RequestInit) => {
     calls.push({ url, init });
     const step = steps.shift();
-    if (step === undefined) throw new Error("unscripted call");
-    if (step instanceof Error) throw step;
-    return step;
+    if (step === undefined) return Promise.reject(new Error("unscripted call"));
+    if (step instanceof Error) return Promise.reject(step);
+    return Promise.resolve(step);
   }) as unknown as typeof fetch;
   return { calls, fetchMock };
 };
@@ -77,11 +77,13 @@ describe("createCentralM2MTokenSource", () => {
     await expect(source.getToken()).resolves.toBe(TOKEN_A);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe(URL_);
-    expect(calls[0]!.init.method).toBe("POST");
-    expect(calls[0]!.init.headers).toEqual({ "X-M2M-Caller-Secret": SECRET });
-    expect(calls[0]!.init.body).toBeUndefined();
-    expect(calls[0]!.init.signal).toBeInstanceOf(AbortSignal);
+    const call = calls[0];
+    expect(call).toBeDefined();
+    expect(call?.url).toBe(URL_);
+    expect(call?.init.method).toBe("POST");
+    expect(call?.init.headers).toEqual({ "X-M2M-Caller-Secret": SECRET });
+    expect(call?.init.body).toBeUndefined();
+    expect(call?.init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("serves the cache before the refresh point iat + (exp - iat) / 2 and refreshes at it", async () => {
@@ -318,8 +320,8 @@ describe("createCentralM2MTokenSource", () => {
       // JSON cannot carry Infinity or NaN, so the payload is written by hand:
       // 1e999 parses to Infinity.
       const payload = (text: string) => `e30.${Buffer.from(text).toString("base64url")}.sig-x`;
-      await tokenFailure(payload(`{"iat":${T0},"exp":1e999}`));
-      await tokenFailure(payload(`{"iat":-1e999,"exp":${T0 + LIFETIME}}`));
+      await tokenFailure(payload(`{"iat":${String(T0)},"exp":1e999}`));
+      await tokenFailure(payload(`{"iat":-1e999,"exp":${String(T0 + LIFETIME)}}`));
     });
 
     it("refuses exp equal to iat", async () => {
@@ -349,7 +351,7 @@ describe("createCentralM2MTokenSource", () => {
 
   describe("construction", () => {
     const make = (over: Record<string, unknown>) => () =>
-      createCentralM2MTokenSource({ url: URL_, secret: SECRET, ...over } as never);
+      createCentralM2MTokenSource({ url: URL_, secret: SECRET, ...over });
 
     it("accepts the minimal valid options and the extremes of timeoutMs", () => {
       expect(make({})).not.toThrow();
@@ -387,7 +389,7 @@ describe("createCentralM2MTokenSource", () => {
   });
 
   describe("secrecy", () => {
-    const failures: Array<[string, Step[]]> = [
+    const failures: [string, Step[]][] = [
       ["a 401", [status(401)]],
       ["a 503", [status(503)]],
       ["two timeouts", [timeout(), timeout()]],

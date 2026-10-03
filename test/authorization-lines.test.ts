@@ -90,7 +90,7 @@ beforeAll(async () => {
   });
   center.listen(0, "127.0.0.1");
   await once(center, "listening");
-  centerUrl = `http://127.0.0.1:${(center.address() as AddressInfo).port}/auth/v1/introspect`;
+  centerUrl = `http://127.0.0.1:${String((center.address() as AddressInfo).port)}/auth/v1/introspect`;
 
   const auth = createExpressAuth({ url: centerUrl, secret: SECRET });
   const whoami = (_req: unknown, res: ResponseLike): void => {

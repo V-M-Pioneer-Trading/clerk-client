@@ -77,7 +77,7 @@ describe("loadIntrospectionConfig", () => {
     // Without this check the first symptom is a 503 on every credentialed
     // request — which reads as an auth outage and is really a runtime the
     // service never had. Startup is the honest place to say so.
-    const withoutFetch = async (run: () => void): Promise<void> => {
+    const withoutFetch = (run: () => void): void => {
       const original = globalThis.fetch;
       // @ts-expect-error deliberately removing a global the package requires
       delete globalThis.fetch;
@@ -88,8 +88,8 @@ describe("loadIntrospectionConfig", () => {
       }
     };
 
-    it("refuses to start when global fetch is missing", async () => {
-      await withoutFetch(() => {
+    it("refuses to start when global fetch is missing", () => {
+      withoutFetch(() => {
         expect(() => loadIntrospectionConfig(good)).toThrow(
           IntrospectionConfigError
         );
@@ -105,8 +105,8 @@ describe("loadIntrospectionConfig", () => {
       expect(() => loadIntrospectionConfig(good)).not.toThrow();
     });
 
-    it("never renders the secret in that message either", async () => {
-      await withoutFetch(() => {
+    it("never renders the secret in that message either", () => {
+      withoutFetch(() => {
         try {
           loadIntrospectionConfig(good);
           throw new Error("expected a throw");

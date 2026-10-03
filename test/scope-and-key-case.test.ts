@@ -54,7 +54,7 @@ describe("splitScopes", () => {
 
   // Every character JavaScript's \s matches other than the four separators,
   // plus U+0085 and U+180E, which it does not: each is part of the token.
-  const notSeparators: Array<[string, string]> = [
+  const notSeparators: [string, string][] = [
     ["VT", "\u000b"],
     ["FF", "\u000c"],
     ["NEXT LINE", "\u0085"],
@@ -111,7 +111,7 @@ describe("a scope joined by a non-separator is one scope, through the authorizer
 });
 
 describe("top-level keys equal ignoring case are a malformed answer", () => {
-  const refused: Array<[string, string]> = [
+  const refused: [string, string][] = [
     ["Active after active", answer('"scope":"fleet:control","Active":false')],
     ["ACTIVE before active", '{"ACTIVE":false,"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator"}'],
     ["Sub beside sub", answer('"scope":"fleet:control","Sub":"user_b"')],

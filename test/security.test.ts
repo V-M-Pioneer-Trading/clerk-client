@@ -27,6 +27,7 @@ const TOKEN = "operator.token.never.logged";
 const captureOutput = async (run: () => Promise<void>): Promise<string> => {
   const written: string[] = [];
   const consoleMethods = ["log", "info", "warn", "error", "debug", "trace"] as const;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- saved only so it can be restored by assignment; never called unbound
   const originalConsole = consoleMethods.map((m) => [m, console[m]] as const);
   const originalStdout = process.stdout.write.bind(process.stdout);
   const originalStderr = process.stderr.write.bind(process.stderr);
@@ -39,11 +40,11 @@ const captureOutput = async (run: () => Promise<void>): Promise<string> => {
   process.stdout.write = ((chunk: unknown, ...rest: unknown[]) => {
     written.push(String(chunk));
     return originalStdout(chunk as string, ...(rest as []));
-  }) as typeof process.stdout.write;
+  });
   process.stderr.write = ((chunk: unknown, ...rest: unknown[]) => {
     written.push(String(chunk));
     return originalStderr(chunk as string, ...(rest as []));
-  }) as typeof process.stderr.write;
+  });
 
   try {
     await run();
@@ -194,7 +195,7 @@ describe("the center's answer is read under a cap", () => {
 });
 
 describe("a partial or wrongly typed answer is unavailable, never inactive", () => {
-  const bad: Array<[string, string]> = [
+  const bad: [string, string][] = [
     ["missing sub", '{"active":true,"scope":"a","exp":1,"kind":"operator"}'],
     ["missing kind", '{"active":true,"sub":"user_a","scope":"a","exp":1}'],
     ["scope as null", '{"active":true,"sub":"user_a","scope":null,"exp":1,"kind":"operator"}'],
@@ -296,8 +297,8 @@ describe("concurrent requests share no state", () => {
           res.end(
             JSON.stringify({
               active: true,
-              sub: `user_${token}`,
-              scope: `scope:${token}`,
+              sub: `user_${String(token)}`,
+              scope: `scope:${String(token)}`,
               exp: 4102444800,
               kind: Number(token) % 2 === 0 ? "operator" : "machine",
             })
@@ -311,7 +312,7 @@ describe("concurrent requests share no state", () => {
 
     try {
       const authorizer = createAuthorizer({
-        url: `http://127.0.0.1:${port}/auth/v1/introspect`,
+        url: `http://127.0.0.1:${String(port)}/auth/v1/introspect`,
         secret: SECRET,
       });
       const indices = Array.from({ length: 40 }, (_, i) => i);
@@ -319,8 +320,8 @@ describe("concurrent requests share no state", () => {
         indices.map((i) =>
           authorizer.authorize({
             method: "POST",
-            requires: `scope:${i}`,
-            authorization: `Bearer ${i}`,
+            requires: `scope:${String(i)}`,
+            authorization: `Bearer ${String(i)}`,
           })
         )
       );
@@ -329,9 +330,9 @@ describe("concurrent requests share no state", () => {
         expect(decision.outcome).toBe("proceed");
         if (decision.outcome !== "proceed") return;
         expect(decision.identity).toEqual({
-          sub: `user_${i}`,
+          sub: `user_${String(i)}`,
           kind: i % 2 === 0 ? "operator" : "machine",
-          scopes: [`scope:${i}`],
+          scopes: [`scope:${String(i)}`],
         });
       });
     } finally {

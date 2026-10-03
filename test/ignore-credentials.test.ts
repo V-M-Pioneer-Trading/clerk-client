@@ -17,7 +17,7 @@
  * sees an `allowPublic()` route reading it and sees each of the side doors.
  */
 
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
 
 import type { CenterAnswer } from "../src/center";
@@ -89,7 +89,7 @@ const recordingMap = <T extends object>(target: T, label: string): T =>
  * wrappers. Mounted first, as a passthrough, so everything after it — the
  * declaration included — sees only the trapped request.
  */
-const trap = passthrough((req: any, _res: any, next: any): void => {
+const trap = passthrough((req: Request, _res: Response, next: NextFunction): void => {
   // Read before `rawHeaders` is replaced: Node builds it lazily FROM
   // `rawHeaders`, and the trap must not record its own setup.
   const distinct = req.headersDistinct as Record<string, unknown>;
@@ -98,7 +98,7 @@ const trap = passthrough((req: any, _res: any, next: any): void => {
     enumerable: true,
     value: recordingMap(distinct, "headersDistinct"),
   });
-  const raw = req.rawHeaders as string[];
+  const raw = req.rawHeaders;
   req.rawHeaders = new Proxy(raw, {
     get(target, key, receiver) {
       // [name, value, name, value, …]: the credential is the odd slot after
@@ -109,22 +109,23 @@ const trap = passthrough((req: any, _res: any, next: any): void => {
           reads.push("rawHeaders.value");
         }
       }
-      return Reflect.get(target, key, receiver);
+      return Reflect.get(target, key, receiver) as unknown;
     },
   });
-  req.headers = recordingMap(req.headers as Record<string, unknown>, "headers");
+  req.headers = recordingMap(req.headers, "headers");
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- always invoked with an explicit this via original.call(this, name)
   const original = req.get as (name: string) => unknown;
   req.get = req.header = function (this: unknown, name: string): unknown {
     if (isAuthorization(name)) reads.push("req.get");
     return original.call(this, name);
-  };
+  } as Request["get"];
   next();
 }, "test trap: records credential reads; never answers");
 
 /** A handler that reports everything the accessors say. */
 const report =
   (name = "handler") =>
-  (_req: unknown, res: any): void => {
+  (_req: unknown, res: Response): void => {
     ran.push(name);
     res.json({
       identity: identityOf(res),
@@ -135,7 +136,7 @@ const report =
     });
   };
 
-const BEARERS: ReadonlyArray<[string, string]> = [
+const BEARERS: readonly [string, string][] = [
   ["a valid", "Bearer operator.token"],
   ["an inactive", "Bearer expired.token"],
   ["a garbage", "Bearer %%%not-a-token%%%"],
@@ -203,15 +204,15 @@ describe("ignoreCredentials() on a GET route", () => {
     [
       "rawHeaders",
       "rawHeaders.value",
-      (req: any): unknown => {
-        const raw = req.rawHeaders as string[];
+      (req: Request): unknown => {
+        const raw = req.rawHeaders;
         const at = raw.findIndex((v, i) => i % 2 === 0 && v.toLowerCase() === "authorization");
         return raw[at + 1];
       },
     ],
-    ["rawHeaders, iterated", "rawHeaders.value", (req: any): unknown => [...req.rawHeaders].join(",")],
-    ["headersDistinct", "headersDistinct.get", (req: any): unknown => req.headersDistinct.authorization],
-    ["headersDistinct, spread", "headersDistinct.descriptor", (req: any): unknown => ({ ...req.headersDistinct })],
+    ["rawHeaders, iterated", "rawHeaders.value", (req: Request): unknown => [...req.rawHeaders].join(",")],
+    ["headersDistinct", "headersDistinct.get", (req: Request): unknown => req.headersDistinct.authorization],
+    ["headersDistinct, spread", "headersDistinct.descriptor", (req: Request): unknown => ({ ...req.headersDistinct })],
   ])(
     "POSITIVE CONTROL: the trap sees a read through %s",
     async (_label, recorded, read) => {
@@ -314,7 +315,7 @@ describe("ignoreCredentials() on a GET route", () => {
 // ---------------------------------------------------------------------------
 
 describe("ignoreCredentials() is refused on a mutating registration", () => {
-  const noop = (_req: unknown, res: any): void => {
+  const noop = (_req: unknown, res: Response): void => {
     ran.push("mutation");
     res.json({ ran: true });
   };
@@ -327,7 +328,7 @@ describe("ignoreCredentials() is refused on a mutating registration", () => {
         string,
         (...args: unknown[]) => unknown
       >;
-      expect(() => app[method]!("/x", auth.ignoreCredentials(), noop)).toThrow(
+      expect(() => app[method]?.("/x", auth.ignoreCredentials(), noop)).toThrow(
         /accepted only on get, head and options routes and on\s+use\(\) mounts/
       );
     }
@@ -340,7 +341,7 @@ describe("ignoreCredentials() is refused on a mutating registration", () => {
       string,
       (...args: unknown[]) => unknown
     >;
-    expect(() => route[method]!(auth.ignoreCredentials(), noop)).toThrow(
+    expect(() => route[method]?.(auth.ignoreCredentials(), noop)).toThrow(
       /ignoreCredentials\(\)/
     );
   });
@@ -442,7 +443,7 @@ describe("a mutating request that reaches it through a use() mount", () => {
     const app = secured(express());
     let seen: unknown = "unset";
     app.use(
-      passthrough((_req: any, res: any, next: any) => {
+      passthrough((_req: Request, res: Response, next: NextFunction) => {
         res.on("finish", () => {
           seen = identityOf(res);
         });
@@ -465,7 +466,7 @@ describe("a mutating request that reaches it through a use() mount", () => {
     const app = secured(express());
     let seen: unknown = "unset";
     app.use(
-      passthrough((_req: any, res: any, next: any) => {
+      passthrough((_req: Request, res: Response, next: NextFunction) => {
         res.on("finish", () => {
           seen = requirementOf(res);
         });
@@ -484,7 +485,7 @@ describe("a mutating request that reaches it through a use() mount", () => {
 // ---------------------------------------------------------------------------
 
 describe("ignoreCredentials() obeys the declaration rules", () => {
-  const h = (_req: unknown, res: any): void => {
+  const h = (_req: unknown, res: Response): void => {
     res.json({});
   };
 
@@ -493,8 +494,8 @@ describe("ignoreCredentials() obeys the declaration rules", () => {
     const app = secured(express());
     app.use(trap);
     const serve = [
-      (_req: any, _res: any, next: any) => next(),
-      (_req: any, _res: any, next: any) => next(),
+      (_req: Request, _res: Response, next: NextFunction) => { next(); },
+      (_req: Request, _res: Response, next: NextFunction) => { next(); },
     ];
     app.use("/api/fleet/swagger", auth.ignoreCredentials(), serve, report());
 

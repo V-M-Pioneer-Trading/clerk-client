@@ -57,17 +57,19 @@ const RegisterRoutes = (router: express.Router): void => {
 /** `swaggerUi.serve` is an ARRAY of middleware; `setup()` returns one handler. */
 const swaggerUi = {
   serve: [
-    (_req: RequestLike, _res: ResponseLike, next: NextLike): void => next(),
-    (_req: RequestLike, _res: ResponseLike, next: NextLike): void => next(),
+    (_req: RequestLike, _res: ResponseLike, next: NextLike): void => { next(); },
+    (_req: RequestLike, _res: ResponseLike, next: NextLike): void => { next(); },
   ],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- stub must accept the argument the README snippet passes
   setup: (_spec: unknown) => handler,
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- stub must accept the argument the README snippet passes
 const cors = (_options?: unknown) => (
   _req: RequestLike,
   _res: ResponseLike,
   next: NextLike
-): void => next();
+): void => { next(); };
 
 /**
  * A request double, for the snippets that read one header off it and count
@@ -85,6 +87,7 @@ const req: {
 } = {
   method: "GET",
   rawHeaders: ["Host", "localhost"],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the double must have the signature of a real Request's header()
   header: (_name: string): string | undefined => undefined,
 };
 

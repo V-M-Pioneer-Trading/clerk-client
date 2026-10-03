@@ -128,7 +128,7 @@ export const authorizationShape = (testCase: FixtureCase): AuthorizationShape =>
     value.length >= 2 &&
     value.every((line) => typeof line === "string")
   ) {
-    return { kind: "lines", lines: value as string[] };
+    return { kind: "lines", lines: value };
   }
   throw new Error(
     `${testCase.name}: unknown request.authorization shape ${JSON.stringify(value)} — ` +
@@ -154,7 +154,7 @@ export const countFetches = (): FetchCounter => {
   globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
     calls += 1;
     return original(...args);
-  }) as typeof fetch;
+  });
   return {
     get calls() {
       return calls;

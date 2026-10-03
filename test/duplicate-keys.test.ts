@@ -20,7 +20,7 @@ import { createLaneDeriver } from "../src/gateway";
 import { DEFAULT_MAX_RESPONSE_BYTES, MESSAGES } from "../src/messages";
 import { parseStrictJson } from "../src/strictJson";
 import { loadFixture } from "./support/fixture";
-import { startStubCenter, type CenterSpec } from "./support/stubCenter";
+import { startStubCenter } from "./support/stubCenter";
 
 const SECRET = "duplicate-keys-suite-secret";
 const TOKEN = "duplicate.token.one";
@@ -63,7 +63,7 @@ describe("the fixture's duplicate-key cases, through the adapter consumers use",
 
   it("center-returns-duplicate-key is 503 through real Express and createExpressAuth", async () => {
     if (calling === undefined) throw new Error("case missing");
-    const center = await startStubCenter(calling.center as CenterSpec);
+    const center = await startStubCenter(calling.center);
     try {
       const auth = createExpressAuth({ url: center.url, secret: SECRET });
       const api = secured(express.Router());
@@ -85,7 +85,7 @@ describe("the fixture's duplicate-key cases, through the adapter consumers use",
 
   it("gateway-center-returns-duplicate-key lanes background through createLaneDeriver", async () => {
     if (gateway === undefined) throw new Error("case missing");
-    const center = await startStubCenter(gateway.center as CenterSpec);
+    const center = await startStubCenter(gateway.center);
     try {
       const lane = await createLaneDeriver({ url: center.url, secret: SECRET }).derive(
         gateway.request.authorization as string
@@ -99,7 +99,7 @@ describe("the fixture's duplicate-key cases, through the adapter consumers use",
 });
 
 describe("a repeated key anywhere in the answer is 503, after one call", () => {
-  const repeated: Array<[string, string]> = [
+  const repeated: [string, string][] = [
     ["a repeat at depth", '{"active":true,"sub":"a","x":{"k":1,"k":2}}'],
     // The line above would be 503 without the rule too (no exp, no kind). These
     // are otherwise-valid answers, so only the duplicate check refuses them.
@@ -176,7 +176,7 @@ describe("the cap still comes first", () => {
   const padded = (bytes: number): string => {
     const head = '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator"';
     let body = head;
-    for (let i = 0; body.length < bytes - 40; i += 1) body += `,"k${i}":${i}`;
+    for (let i = 0; body.length < bytes - 40; i += 1) body += `,"k${String(i)}":${String(i)}`;
     body += ',"pad":"';
     return body + "x".repeat(bytes - body.length - 2) + '"}';
   };
@@ -184,7 +184,7 @@ describe("the cap still comes first", () => {
   it("a 64 KiB answer made of distinct keys is read", async () => {
     const body = padded(DEFAULT_MAX_RESPONSE_BYTES);
     expect(Buffer.byteLength(body)).toBe(DEFAULT_MAX_RESPONSE_BYTES);
-    expect(() => JSON.parse(body)).not.toThrow();
+    expect(() => { JSON.parse(body); }).not.toThrow();
     const { decision } = await decide(body);
     expect(decision.outcome).toBe("proceed");
   });
@@ -322,13 +322,13 @@ describe("parseStrictJson is JSON.parse, less the repeated key", () => {
     '{"active":true,"sub":"user_a\u000a"}',
   ];
   it.each(refusedByBoth)("refuses %j, as JSON.parse does", (text) => {
-    expect(() => JSON.parse(text)).toThrow(SyntaxError);
+    expect(() => { JSON.parse(text); }).toThrow(SyntaxError);
     expect(() => parseStrictJson(text)).toThrow(SyntaxError);
   });
 
   it("refuses a repeat that JSON.parse accepts", () => {
     for (const text of ['{"a":1,"a":1}', '[{"a":{"b":1,"b":2}}]', '{"a":1,"\\u0061":2}']) {
-      expect(() => JSON.parse(text)).not.toThrow();
+      expect(() => { JSON.parse(text); }).not.toThrow();
       expect(() => parseStrictJson(text)).toThrow(/duplicate key/);
     }
   });

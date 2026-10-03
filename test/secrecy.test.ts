@@ -16,7 +16,7 @@
  */
 
 import { inspect } from "node:util";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
 
 import type { CenterAnswer } from "../src/center";
@@ -46,7 +46,8 @@ const countingAuth = () => {
       calls.push(token);
       // The secret is closed over exactly as the real introspector holds it,
       // so a test that found it on `res.locals` would be finding a real leak.
-      void SECRET;
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- deliberate: the reference is the point, it keeps SECRET closed over like the real introspector
+      SECRET;
       return Promise.resolve(
         token === TOKEN ? ACTIVE : ({ state: "inactive" } as const)
       );
@@ -203,13 +204,13 @@ describe("S1. the memo is per-request and keyed on a digest", () => {
     const app = express();
     const api = express.Router();
     api.use(auth.guard(() => "session"));
-    api.use((req: any, _res: any, next: any) => {
+    api.use((req: Request, _res: Response, next: NextFunction) => {
       // The adapter reads the credential from rawHeaders (a rewrite of
       // req.headers or req.header() is ignored), so that is what changes.
       const kept: string[] = [];
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         if (String(req.rawHeaders[i]).toLowerCase() === "authorization") continue;
-        kept.push(req.rawHeaders[i], req.rawHeaders[i + 1]);
+        kept.push(req.rawHeaders[i] ?? "", req.rawHeaders[i + 1] ?? "");
       }
       req.rawHeaders = [...kept, "Authorization", "Bearer second.token"];
       next();

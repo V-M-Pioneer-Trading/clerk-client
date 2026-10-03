@@ -21,7 +21,7 @@
  * function, so nothing a caller can write onto a handler vouches for it.
  */
 
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
 
 import type { CenterAnswer } from "../src/center";
@@ -59,7 +59,7 @@ beforeEach(() => {
 
 const handler =
   (name = "handler") =>
-  (_req: unknown, res: any): void => {
+  (_req: unknown, res: Response): void => {
     ran.push(name);
     res.json({ ran: name });
   };
@@ -70,7 +70,7 @@ const handler =
 
 describe("B1. a notFound() terminal cannot be used as a mount", () => {
   const mutating = () =>
-    notFound((_req: any, res: any) => {
+    notFound((_req: Request, res: Response) => {
       ran.push("mutating");
       res.status(200).json({ deleted: "everything" });
     });
@@ -121,7 +121,7 @@ describe("B1. a notFound() terminal cannot be used as a mount", () => {
   it("does not brand the function the caller passed in", () => {
     // The brand goes on the wrapper. A caller that keeps a reference to its
     // own function must not find that this package has vouched for it.
-    const bare = (_req: any, res: any): void => {
+    const bare = (_req: Request, res: Response): void => {
       res.json({ ok: true });
     };
     notFound(bare);
@@ -150,7 +150,7 @@ describe("B1. a notFound() terminal cannot be used as a mount", () => {
     secure.get("/known", auth().allowPublic(), handler("known"));
     expect(() =>
       secure.use(
-        notFound((_req: any, res: any) =>
+        notFound((_req: Request, res: Response) =>
           res.status(404).json({ error: { message: "not found" } })
         )
       )
@@ -173,7 +173,7 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
     const secure = secured(express.Router());
     secure.get("/known", counting.requireSession(), handler("known"));
     secure.use(
-      notFound((_req: any, res: any) => {
+      notFound((_req: Request, res: Response) => {
         ran.push("terminal");
         res.status(200).json({ deleted: "everything" });
       })
@@ -193,7 +193,7 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
     const secure = secured(express.Router());
     secure.get("/known", auth().allowPublic(), handler("known"));
     secure.use(
-      notFound((_req: any, res: any) => {
+      notFound((_req: Request, res: Response) => {
         res.json({ error: { message: "not found" } });
       })
     );
@@ -208,7 +208,7 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
     const secure = secured(express.Router());
     secure.get("/known", auth().allowPublic(), handler("known"));
     secure.use(
-      notFound((_req: any, res: any) => {
+      notFound((_req: Request, res: Response) => {
         res.statusCode = 200;
         setImmediate(() => res.end());
       })
@@ -225,7 +225,7 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
     const secure = secured(express.Router());
     secure.get("/known", auth().allowPublic(), handler("known"));
     secure.use(
-      notFound((_req: any, res: any) => {
+      notFound((_req: Request, res: Response) => {
         res.status(410).json({ error: { message: "gone" } });
       })
     );
@@ -241,11 +241,12 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
     const secure = secured(express.Router());
     secure.get("/known", auth().allowPublic(), handler("known"));
     secure.use(
-      notFound((_req: any, _res: any, next: any) => {
+      notFound((_req: Request, _res: Response, next: NextFunction) => {
         next(new Error("boom"));
       })
     );
-    const onError = (_e: unknown, _req: any, res: any, _n: any): void => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
+    const onError = (_e: unknown, _req: Request, res: Response, _n: NextFunction): void => {
       res.status(500).json({ error: { message: "internal" } });
     };
     secure.use(onError as never);
@@ -256,7 +257,7 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
 
   it("refuses a non-function, and returns a wrapper of arity 3", () => {
     expect(() => notFound(undefined as never)).toThrow(/handler function/);
-    const wrapper = notFound((_req: any, res: any) => res.end()) as unknown as {
+    const wrapper = notFound((_req: Request, res: Response) => res.end()) as unknown as {
       length: number;
     };
     // Never 4: an arity-4 layer is an error handler to Express and would not
@@ -272,7 +273,8 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
 describe("S4. use() refuses a bare arity-3 middleware and a bare Router", () => {
   it("refuses an arity-3 middleware that vouches for nothing", () => {
     const api = secured(express.Router());
-    const three = (_req: any, _res: any, _next: any): void => {};
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function -- Express tells handlers apart by arity, so the unused parameters (and the empty body) must stay
+    const three = (_req: Request, _res: Response, _next: NextFunction): void => {};
     expect(three.length).toBe(3);
     expect(() => api.use(three as never)).toThrow(/neither a declaration nor/);
     expect(() => api.use("/x", three as never)).toThrow(
@@ -299,7 +301,8 @@ describe("S4. use() refuses a bare arity-3 middleware and a bare Router", () => 
 
   it("still accepts the arity-4 error handler it is meant to accept", () => {
     const api = secured(express.Router());
-    const four = (_e: unknown, _req: any, _res: any, _n: any): void => {};
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function -- Express tells handlers apart by arity, so the unused parameters (and the empty body) must stay
+    const four = (_e: unknown, _req: Request, _res: Response, _n: NextFunction): void => {};
     expect(four.length).toBe(4);
     expect(() => api.use(four as never)).not.toThrow();
   });
@@ -374,7 +377,7 @@ describe("S5. a brand cannot be forged with a property", () => {
     const clone = handler("clone") as unknown as Record<string, unknown>;
     for (const key of Reflect.ownKeys(real)) {
       const descriptor = Object.getOwnPropertyDescriptor(real, key);
-      if (descriptor !== undefined && descriptor.configurable === true) {
+      if (descriptor?.configurable === true) {
         Object.defineProperty(clone, key, descriptor);
       }
     }
@@ -390,7 +393,7 @@ describe("S5. a brand cannot be forged with a property", () => {
     const app = express();
     const api = secured(express.Router());
     const forged = handler("forged") as unknown as Record<string, unknown>;
-    forged["__declares"] = "none";
+    forged.__declares = "none";
     expect(() => api.get("/x", forged as never)).toThrow();
     app.use(api);
 
