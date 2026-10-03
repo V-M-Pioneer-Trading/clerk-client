@@ -564,9 +564,11 @@ jobs:
 
       # A center answer that names a key twice is a malformed answer (meta
       # fixture v5, #6): JSON.parse would let the last value win, where the Go
-      # and Java clients answer 503. Proven from the packed tarball, so a build
-      # that shipped without the strict reader, or fell back to JSON.parse,
-      # fails here and not in a consumer.
+      # and Java clients answer 503. Since 2.0.1 (fixture v6) that includes two
+      # top-level keys equal ignoring case and a miscased contract key, and
+      # only space, tab, CR and LF separate scopes. Proven from the packed
+      # tarball, so a build that shipped without the strict reader, or fell
+      # back to JSON.parse or /\s+/, fails here and not in a consumer.
       - name: Prove a duplicated key is a malformed answer, from the tarball
         run: |
           cd /tmp/consumer
@@ -587,6 +589,16 @@ jobs:
               '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","x":{"k":1,"k":2}}',
             'escaped.token':
               '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","s\\u0075b":"user_b"}',
+            'case.token':
+              '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","Active":false}',
+            'miscased.token':
+              '{"active":true,"sub":"user_a","Scope":"fleet:control","exp":4102444800,"kind":"operator"}',
+            'kindcase.token':
+              '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","Kind":"machine"}',
+            'nbsp.token':
+              '{"active":true,"sub":"user_a","scope":"fleet:control\\u00a0agent:reset","exp":4102444800,"kind":"operator"}',
+            'tab.token':
+              '{"active":true,"sub":"user_a","scope":"agent:reset\\tfleet:control","exp":4102444800,"kind":"operator"}',
             'distinct.token':
               '{"active":true,"sub":"user_a","scope":"fleet:control","exp":4102444800,"kind":"operator","x":{"sub":"user_b"}}',
           };
@@ -615,7 +627,7 @@ jobs:
               method: 'POST', requires: 'fleet:control', authorization: 'Bearer ' + token,
             });
 
-            for (const token of ['duplicate.token.one', 'nested.token', 'escaped.token']) {
+            for (const token of ['duplicate.token.one', 'nested.token', 'escaped.token', 'case.token', 'miscased.token']) {
               const before = centerCalls;
               const d = await decide(token);
               const made = centerCalls - before;
@@ -627,6 +639,17 @@ jobs:
             const lane = await deriver.derive('Bearer duplicate.token.one');
             if (lane !== 'background') fail('duplicate key lane: expected background, got ' + lane);
             else console.log('  ok  duplicate key lane -> background');
+            const caseLane = await deriver.derive('Bearer kindcase.token');
+            if (caseLane !== 'background') fail('case-variant kind lane: expected background, got ' + caseLane);
+            else console.log('  ok  case-variant kind lane -> background');
+            const nbsp = await decide('nbsp.token');
+            if (nbsp.outcome !== 'reject' || nbsp.status !== 403) {
+              fail('a scope joined by U+00A0: expected 403, got ' + JSON.stringify(nbsp));
+            } else console.log('  ok  a scope joined by U+00A0 is one scope -> 403');
+            const tab = await decide('tab.token');
+            if (tab.outcome !== 'proceed' || JSON.stringify(tab.identity.scopes) !== JSON.stringify(['agent:reset', 'fleet:control'])) {
+              fail('a scope joined by a tab: expected proceed with two scopes, got ' + JSON.stringify(tab));
+            } else console.log('  ok  a tab separates scopes -> proceed');
             const d = await decide('distinct.token');
             if (d.outcome !== 'proceed' || d.identity.sub !== 'user_a') {
               fail('the same key in two objects: expected proceed as user_a, got ' + JSON.stringify(d));

@@ -1,6 +1,6 @@
 {
   "name": "@v-m-pioneer-trading/clerk-client",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Shared TypeScript client for auth-service token introspection: default-deny route guards, an Express 4 adapter and st-gateway's lane policy.",
   "license": "MIT",
   "author": "Max Radomskyi",
