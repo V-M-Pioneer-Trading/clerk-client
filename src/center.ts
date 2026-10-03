@@ -212,8 +212,8 @@ export function createIntrospector(config: IntrospectionConfig): Introspector {
         // malformed answer (meta fixture v5, clerk-client#6).
         // JSON.parse lets the last value win, so {"sub":"a","sub":"b"} would
         // proceed as b where the Java client (Jackson,
-        // STRICT_DUPLICATE_DETECTION, any depth) and the Go client (top-level
-        // members) refuse the body. The cap above runs first, so the parser
+        // STRICT_DUPLICATE_DETECTION, any depth) and the Go client (any depth)
+        // refuse the body. The cap above runs first, so the parser
         // never sees more than maxResponseBytes.
         let parsed: unknown;
         try {

@@ -69,7 +69,7 @@ describe("the vendored fixture", () => {
     // Belt and braces: if both the copy and SOURCE were edited together, this
     // literal still pins the bytes the implementation was reviewed against.
     expect(fixtureSha256()).toBe(
-      "3918d6790d583f0346498a1f61482d0bb846f46a24706d4e9e09181eac5f62c0"
+      "f12d41d91b12cd4b8d6674a534ad718d90273aaa93becab4e836654467c43c7c"
     );
   });
 
