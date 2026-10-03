@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.0.1 — 2026-10-03
+
+Bug fix, no API change. Conforms to `meta` fixture version 6. Part of
+V-M-Pioneer-Trading/meta#103 (the divergences were found porting
+agent-service to TypeScript).
+
+### Fixed
+
+- **`scope` was split on every Unicode space (present in 1.0.0 through
+  2.0.0).** `splitScopes` used `/\s+/`, which JavaScript defines to include
+  VT, FF, U+00A0, U+2000–U+200A, U+3000, U+FEFF and more, so a token whose
+  `scope` was `fleet:control` + U+00A0 + `agent:reset` satisfied a route
+  requiring `fleet:control`, where the Go and Java clients answer `403`.
+  Scopes are now separated by runs of space, tab, CR and LF only, empties
+  discarded; every other character is part of the scope token.
+- **Top-level keys that differ only in case were read as different keys
+  (present in 1.0.0 through 2.0.0).** `{"active":true,…,"Active":false}`
+  proceeded and `{"active":true,…,"Scope":"…"}` read as an absent scope,
+  where the Go and Java clients answer `503`. Two top-level keys equal under
+  `toLowerCase()`, or a contract key (`active`, `sub`, `scope`, `exp`,
+  `kind`) spelled any other way, are now a malformed answer: `503`
+  `the authentication service could not process this request` on a calling
+  service and the `background` lane at the gateway, after one call. Below the
+  top level only an exact repeat is refused, as before.
+
+### Changed
+
+- Fixture version 6 vendored (51 + 14 cases); the CI tarball proof also checks
+  a case-variant key, a miscased contract key, a scope joined by U+00A0 and
+  one joined by a tab.
+
 ## 2.0.0 — 2026-10-01
 
 Rename only, no API change. The package is now

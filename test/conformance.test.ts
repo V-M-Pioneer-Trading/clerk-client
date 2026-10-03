@@ -69,7 +69,7 @@ describe("the vendored fixture", () => {
     // Belt and braces: if both the copy and SOURCE were edited together, this
     // literal still pins the bytes the implementation was reviewed against.
     expect(fixtureSha256()).toBe(
-      "ffbb7aa932d8d8523da125a0ff9a93f1fd771d5a32841d7e03ee25ec7b1315b7"
+      "3918d6790d583f0346498a1f61482d0bb846f46a24706d4e9e09181eac5f62c0"
     );
   });
 
@@ -78,6 +78,8 @@ describe("the vendored fixture", () => {
       "active-machine-kind",
       "active-with-irregular-scope-whitespace",
       "active-with-multi-value-scope",
+      "active-with-non-separators-in-scope",
+      "active-with-only-spaces-in-scope",
       "active-with-required-scope",
       "active-with-scope-differing-only-in-case",
       "active-with-scope-that-is-a-prefix-of-required",
@@ -86,6 +88,8 @@ describe("the vendored fixture", () => {
       "bearer-with-internal-whitespace",
       "center-rejects-our-caller-secret",
       "center-returns-500",
+      "center-returns-case-variant-duplicate-key",
+      "center-returns-contract-key-in-another-case",
       "center-returns-duplicate-key",
       "center-returns-malformed-json",
       "center-times-out",
@@ -106,6 +110,12 @@ describe("the vendored fixture", () => {
       "operator-on-public-get",
       "options-on-guarded-route-with-no-header",
       "options-with-no-declared-scope",
+      "scope-joined-by-em-space",
+      "scope-joined-by-form-feed",
+      "scope-joined-by-no-break-space",
+      "scope-joined-by-several-spaces",
+      "scope-joined-by-tab",
+      "scope-joined-by-vertical-tab",
       "scoped-route-with-token-lacking-scope-key",
       "session-route-with-inactive-token",
       "session-route-with-no-header",
@@ -117,7 +127,7 @@ describe("the vendored fixture", () => {
       "two-authorization-lines-second-empty",
       "visitor-on-public-get",
     ]);
-    expect(fixture.cases).toHaveLength(41);
+    expect(fixture.cases).toHaveLength(51);
   });
 
   it("holds exactly the gateway cases this suite implements", () => {
@@ -127,6 +137,7 @@ describe("the vendored fixture", () => {
       "gateway-active-operator-lacking-scope-key",
       "gateway-bearer-with-empty-token",
       "gateway-center-rejects-our-caller-secret",
+      "gateway-center-returns-case-variant-duplicate-key",
       "gateway-center-returns-duplicate-key",
       "gateway-center-unreachable",
       "gateway-inactive-token",
@@ -136,17 +147,19 @@ describe("the vendored fixture", () => {
       "gateway-non-bearer-scheme",
       "gateway-two-authorization-lines",
     ]);
-    expect(fixture.gatewayCases).toHaveLength(13);
+    expect(fixture.gatewayCases).toHaveLength(14);
   });
 
-  it("is fixture version 5, the one where a duplicated key is a malformed answer", () => {
+  it("is fixture version 6, the one that fixes what separates scopes and how keys compare", () => {
     // Version 1 declared default-deny on every non-GET method; version 2
     // exempted the safe methods; version 3 added answers with no `scope` key;
     // version 4 added requests carrying more than one `Authorization` line;
-    // version 5 added a center answer that names the same key twice.
+    // version 5 added a center answer that names the same key twice;
+    // version 6 pinned that only space, tab, CR and LF separate scopes and
+    // that top-level keys equal ignoring case are a duplicate.
     // A copy that fell back would silently stop asserting those cases, which
     // is the drift this number exists to make visible.
-    expect(fixture.version).toBe(5);
+    expect(fixture.version).toBe(6);
   });
 
   it("gives every case an authorization this suite knows how to send", () => {

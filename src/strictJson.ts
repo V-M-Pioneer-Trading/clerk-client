@@ -10,7 +10,9 @@
  * top-level members (and, like the Java client, a top-level repeat that
  * differs only in case). This reader refuses an exact repeat at any depth,
  * as Jackson does: a body that names a key twice is not one we can say we
- * understood, wherever the repeat sits.
+ * understood, wherever the repeat sits. The top-level case rule (fixture
+ * version 6) is applied after it, in center.ts, because it is about the
+ * contract's keys and not about JSON.
  *
  * Otherwise it accepts exactly what `JSON.parse` accepts and builds the same
  * values: RFC 8259 grammar, the four whitespace characters, no trailing

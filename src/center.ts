@@ -36,16 +36,49 @@ const UNAVAILABLE: CenterAnswer = { state: "unavailable" };
 const INACTIVE: CenterAnswer = { state: "inactive" };
 
 /**
- * Split a `scope` string the way all five verifiers live today do
- * (`strings.Fields` in Go, `/\s+/` in TS, `\s+` in Java): on whitespace
- * *runs*, with empties discarded. `scope` is space-delimited by convention,
- * not by guarantee — the center returns the Clerk claim verbatim.
+ * Split a `scope` string on runs of SPACE, TAB, CR and LF, and on nothing
+ * else, with empties discarded (meta fixture version 6) — exactly what the Go
+ * and Java clients do. Every other character is PART OF a scope token: VT,
+ * FF, a no-break space, an em space, any Unicode space. So `fleet:control` +
+ * U+00A0 + `agent:reset` is one scope, and it is not `fleet:control`. Before
+ * 2.0.1 this split on `/\s+/`, which JavaScript defines to include VT, FF and
+ * every Unicode space, and so granted a scope the Go and Java clients
+ * refused. Leading, trailing and repeated separators still yield no empty
+ * scope: the center returns the Clerk claim verbatim.
  */
 export const splitScopes = (scope: string): string[] =>
-  scope.split(/\s+/).filter((s) => s.length > 0);
+  scope.split(/[ \t\r\n]+/).filter((s) => s.length > 0);
 
 const isKind = (value: unknown): value is Kind =>
   value === "operator" || value === "machine";
+
+/** The five keys the contract defines, spelled exactly. */
+const CONTRACT_KEYS: ReadonlySet<string> = new Set(["active", "sub", "scope", "exp", "kind"]);
+
+/**
+ * True when the top-level keys are ones this client can read unambiguously
+ * (meta fixture version 6): no two equal ignoring case, and no contract key
+ * spelled any way but its own. `{"active":true,…,"Active":false}` names
+ * `active` twice, and `{"Scope":"…"}` is not an absent scope — a reader
+ * comparing keys exactly and a struct binding comparing them
+ * case-insensitively (Go's encoding/json) would read both differently, so
+ * both are malformed answers, as they already were in the Go and Java
+ * clients. Keys are lowered with `toLowerCase()`, the same Unicode lowering
+ * Java's `toLowerCase(Locale.ROOT)` applies; Go's `strings.ToLower` agrees on
+ * every ASCII letter, which is all the fixture pins, and differs only on a
+ * few non-ASCII ones (U+0130). An exact repeat never gets here:
+ * {@link parseStrictJson} refuses it at any depth.
+ */
+const keysAreUnambiguous = (record: Record<string, unknown>): boolean => {
+  const seen = new Set<string>();
+  for (const key of Object.keys(record)) {
+    const lowered = key.toLowerCase();
+    if (seen.has(lowered)) return false;
+    seen.add(lowered);
+    if (CONTRACT_KEYS.has(lowered) && key !== lowered) return false;
+  }
+  return true;
+};
 
 /**
  * Turn a parsed body into an answer, or `null` if it is not the contract.
@@ -57,6 +90,7 @@ const isKind = (value: unknown): value is Kind =>
 const readBody = (body: unknown): CenterAnswer | null => {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
   const record = body as Record<string, unknown>;
+  if (!keysAreUnambiguous(record)) return null;
 
   // Strictly boolean: a truthy 1 or "true" is a center we do not understand.
   if (record.active === false) return INACTIVE;
