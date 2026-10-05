@@ -330,7 +330,6 @@ describe("B2. use() accepts the constructs the three consumers have", () => {
 
   it("5. an error handler, which Express only ever calls with an error in hand", () => {
     const app = secured(express());
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
     const onError = (err: unknown, _req: Request, res: Response, _next: NextFunction): void => {
       res.status(500).json({ error: { message: String(err) } });
     };
@@ -442,7 +441,6 @@ describe("B2. notFound() is terminal", () => {
     const api = secured(express.Router());
     api.use(terminal());
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
     const onError = (_e: unknown, _req: Request, res: Response, _n: NextFunction): void => {
       res.status(500).end();
     };
