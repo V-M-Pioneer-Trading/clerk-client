@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Tests only; no code change and no release.
+
+- Fixture version 7 vendored (56 + 19 cases). Its ten new cases have the
+  center answer 500, 401, 302, 503 or 404 with a valid active body: 503 on a
+  calling service and `background` at the gateway, after one call.
+- New `test/non-2xx.test.ts` (clerk-client#13): sixteen non-2xx statuses with
+  an active body, through the introspector, the authorizer, the lane deriver
+  and Express. Before it, the early return on `!response.ok` in
+  `src/center.ts` could be deleted with every test still passing.
+
 ## 2.0.1 — 2026-10-03
 
 Bug fix, no API change. Conforms to `meta` fixture version 6. Part of
