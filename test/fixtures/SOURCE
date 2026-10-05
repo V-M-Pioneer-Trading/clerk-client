@@ -1,29 +1,29 @@
 introspection.json is vendored verbatim. It is not maintained here.
 
   original    V-M-Pioneer-Trading/meta, path fixtures/introspection.json
-  meta commit 993fea9eb1c38de03b9bea14d6e03d8b450750cc
-  blob        ed0f25acfd3a9aaed7a5674a969cac0b25e7cf80
-  vendored    2026-10-03
-  version     6
-  cases       51 calling-service + 14 gateway = 65
-  bytes       69309
-  sha256      90562110d24e47bfdcbf7ff05f1112b4bc840835bf728fa7f6bd81ff67bbeb9c
+  meta commit f226e5f49b59d094a83a07fbb2f3caf3149a8d66
+  blob        f41e25d15cfeb115fb006543da23430a31cad278
+  vendored    2026-10-05
+  version     7
+  cases       56 calling-service + 19 gateway = 75
+  bytes       77984
+  sha256      95cb78d820dd3eb65f93eb91c379fac152924f1fa9b799bf01603c8f162cda2b
 
-The commit above is the head of meta pull request #107, "Fixture v6: what
-separates scopes, and top-level keys ignoring case". That pull request is
-merged with a merge commit, not squashed, so this commit lands on meta's main
+The commit above is the head of meta pull request #108, "Fixture v7: a non-2xx
+answer is unavailable whatever its body says". That pull request is merged
+with a merge commit, not squashed, so this commit lands on meta's main
 unchanged; had it been squashed, the commit above would be replaced with the
-squash commit, and the blob, bytes and sha256 would not change. Version 6 adds ten
-calling-service cases and one gateway case and changes none. Only space, tab,
-CR and LF separate scopes; VT, FF, a no-break space, an em space and every
-other Unicode space are part of the scope token (2.0.0 split on `/\s+/` and
-granted a scope the Go and Java clients refused). Two top-level keys equal
-ignoring case are a duplicate, and a contract key spelled any other way is
-malformed even once: 503 `centerUnavailable` on a calling service, the
-`background` lane at the gateway (2.0.0 compared keys exactly). The fixture
-pins ASCII case variants; this package lowers keys with `toLowerCase()`, as
-the Java client does, and still refuses an exact repeat in any object at any
-depth (src/strictJson.ts). 2.0.1 is the first release that passes version 6.
+squash commit, and the blob, bytes and sha256 would not change. Version 7 adds
+five calling-service cases and five gateway cases and changes none: the center
+answers 500, 401, 302, 503 or 404 with a valid active body, and the answer is
+503 `centerUnavailable` on a calling service and the `background` lane at
+the gateway, after one call. This package already decided on the status
+before reading the body (src/center.ts, `if (!response.ok)`); the cases pin
+it, and test/non-2xx.test.ts fails if that return is removed (clerk-client#13).
+
+Version 6 (meta #107, commit 993fea9): only space, tab, CR and LF separate
+scopes, and two top-level keys equal ignoring case are a duplicate; 2.0.1 is
+the first release that passes it.
 
 The sha256 is over the LF bytes of the blob as git stores it, which is what
 `git show <commit>:fixtures/introspection.json` prints. test/conformance.test.ts

@@ -10,11 +10,11 @@ declared. This package is that client for the three Node services
 (fleet-service, automation-service, st-gateway).
 
 Its behaviour is not described here but *fixed* by
-[`fixtures/introspection.json`][fixture] in `meta` — fifty-one conditions for a
-calling service and fourteen for st-gateway's queue lane, each with the center's
+[`fixtures/introspection.json`][fixture] in `meta` — fifty-six conditions for a
+calling service and nineteen for st-gateway's queue lane, each with the center's
 response and the exact status, message, identity and call count expected. It is
-vendored into `test/fixtures/` (version 6), and the conformance suite drives all
-sixty-five cases against a real local HTTP stub. The four version-4 cases carry
+vendored into `test/fixtures/` (version 7), and the conformance suite drives all
+seventy-five cases against a real local HTTP stub. The four version-4 cases carry
 two `Authorization` lines, which no header value can express, so they are sent
 as real separate lines through real Express and through the lane recipe below.
 
@@ -482,7 +482,7 @@ Rows are in evaluation order, and the first is first for a reason.
 | Active, route declares `"session"` | proceeds, even with no scopes at all — `"scope":""` and no `scope` key alike (RFC 7662 makes it optional) | yes |
 | Active, route's scope missing | `403` `this action requires a scope this session does not carry` — the scope is **not** named | yes |
 | Active, route's scope present | proceeds with `{sub, kind, scopes}` | yes |
-| Center unreachable, timed out, non-2xx, malformed (a key named twice in any object, or two top-level keys equal ignoring case, or a contract key spelled any other way, included), or rejecting our secret | `503` `the authentication service could not process this request` | yes |
+| Center unreachable, timed out, non-2xx (whatever its body says, an active answer included), malformed (a key named twice in any object, or two top-level keys equal ignoring case, or a contract key spelled any other way, included), or rejecting our secret | `503` `the authentication service could not process this request` | yes |
 
 Every rejection uses the `{"error":{"message":…}}` envelope. Methods and the
 bearer scheme are compared **case-insensitively**; scope literals **exactly** —

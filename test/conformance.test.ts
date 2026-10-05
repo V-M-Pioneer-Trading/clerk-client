@@ -68,7 +68,7 @@ describe("the vendored fixture", () => {
     // Belt and braces: if both the copy and SOURCE were edited together, this
     // literal still pins the bytes the implementation was reviewed against.
     expect(fixtureSha256()).toBe(
-      "90562110d24e47bfdcbf7ff05f1112b4bc840835bf728fa7f6bd81ff67bbeb9c"
+      "95cb78d820dd3eb65f93eb91c379fac152924f1fa9b799bf01603c8f162cda2b"
     );
   });
 
@@ -86,7 +86,12 @@ describe("the vendored fixture", () => {
       "bearer-with-empty-token",
       "bearer-with-internal-whitespace",
       "center-rejects-our-caller-secret",
+      "center-returns-302-with-active-body",
+      "center-returns-401-with-active-body",
+      "center-returns-404-with-active-body",
       "center-returns-500",
+      "center-returns-500-with-active-body",
+      "center-returns-503-with-active-body",
       "center-returns-case-variant-duplicate-key",
       "center-returns-contract-key-in-another-case",
       "center-returns-duplicate-key",
@@ -126,7 +131,7 @@ describe("the vendored fixture", () => {
       "two-authorization-lines-second-empty",
       "visitor-on-public-get",
     ]);
-    expect(fixture.cases).toHaveLength(51);
+    expect(fixture.cases).toHaveLength(56);
   });
 
   it("holds exactly the gateway cases this suite implements", () => {
@@ -136,6 +141,11 @@ describe("the vendored fixture", () => {
       "gateway-active-operator-lacking-scope-key",
       "gateway-bearer-with-empty-token",
       "gateway-center-rejects-our-caller-secret",
+      "gateway-center-returns-302-with-active-body",
+      "gateway-center-returns-401-with-active-body",
+      "gateway-center-returns-404-with-active-body",
+      "gateway-center-returns-500-with-active-body",
+      "gateway-center-returns-503-with-active-body",
       "gateway-center-returns-case-variant-duplicate-key",
       "gateway-center-returns-duplicate-key",
       "gateway-center-unreachable",
@@ -146,19 +156,20 @@ describe("the vendored fixture", () => {
       "gateway-non-bearer-scheme",
       "gateway-two-authorization-lines",
     ]);
-    expect(fixture.gatewayCases).toHaveLength(14);
+    expect(fixture.gatewayCases).toHaveLength(19);
   });
 
-  it("is fixture version 6, the one that fixes what separates scopes and how keys compare", () => {
+  it("is fixture version 7, the one that pins a non-2xx with an active body as unavailable", () => {
     // Version 1 declared default-deny on every non-GET method; version 2
     // exempted the safe methods; version 3 added answers with no `scope` key;
     // version 4 added requests carrying more than one `Authorization` line;
     // version 5 added a center answer that names the same key twice;
     // version 6 pinned that only space, tab, CR and LF separate scopes and
-    // that top-level keys equal ignoring case are a duplicate.
+    // that top-level keys equal ignoring case are a duplicate;
+    // version 7 added non-2xx answers whose body is a valid active answer.
     // A copy that fell back would silently stop asserting those cases, which
     // is the drift this number exists to make visible.
-    expect(fixture.version).toBe(6);
+    expect(fixture.version).toBe(7);
   });
 
   it("gives every case an authorization this suite knows how to send", () => {
