@@ -457,7 +457,6 @@ describe("8. secured() refuses an undeclared handler at registration time", () =
       err: unknown,
       _req: unknown,
       res: Response,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused one must stay
       _next: unknown
     ): void => {
       res.status(500).json({ error: { message: String(err) } });

@@ -668,7 +668,7 @@ describe("passthrough()", () => {
   });
 
   it("preserves the arity of an error handler it is given", () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
+    // eslint-disable-next-line @typescript-eslint/no-empty-function -- the body is empty on purpose; only the handler's arity matters to Express
     const onError = (_e: unknown, _req: Request, _res: Response, _n: NextFunction): void => {};
     expect(passthrough(onError, "logs errors; never answers").length).toBe(4);
   });

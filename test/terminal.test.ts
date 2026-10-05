@@ -245,7 +245,6 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
         next(new Error("boom"));
       })
     );
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express tells an error handler apart by arity (four parameters), so the unused ones must stay
     const onError = (_e: unknown, _req: Request, res: Response, _n: NextFunction): void => {
       res.status(500).json({ error: { message: "internal" } });
     };
@@ -273,7 +272,7 @@ describe("B1. a notFound() terminal cannot answer a success", () => {
 describe("S4. use() refuses a bare arity-3 middleware and a bare Router", () => {
   it("refuses an arity-3 middleware that vouches for nothing", () => {
     const api = secured(express.Router());
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function -- Express tells handlers apart by arity, so the unused parameters (and the empty body) must stay
+    // eslint-disable-next-line @typescript-eslint/no-empty-function -- the body is empty on purpose; only the handler's arity matters to Express
     const three = (_req: Request, _res: Response, _next: NextFunction): void => {};
     expect(three.length).toBe(3);
     expect(() => api.use(three as never)).toThrow(/neither a declaration nor/);
@@ -301,7 +300,7 @@ describe("S4. use() refuses a bare arity-3 middleware and a bare Router", () => 
 
   it("still accepts the arity-4 error handler it is meant to accept", () => {
     const api = secured(express.Router());
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function -- Express tells handlers apart by arity, so the unused parameters (and the empty body) must stay
+    // eslint-disable-next-line @typescript-eslint/no-empty-function -- the body is empty on purpose; only the handler's arity matters to Express
     const four = (_e: unknown, _req: Request, _res: Response, _n: NextFunction): void => {};
     expect(four.length).toBe(4);
     expect(() => api.use(four as never)).not.toThrow();
