@@ -15,3 +15,8 @@
 
 - CI `ci.yml`: lint, typecheck, build, test, `check:readme`, then tarball proofs in scratch projects. `release.yml`: on `v*` matching `package.json`, `gh release create`.
 - Consumers: agent-service, automation-service, fleet-service, st-gateway (2.0.1), by tarball URL.
+
+## Reference docs
+
+- `README.md` "Security model", env table, "Minting a machine token": read when changing guards, declarations, the center call or the M2M source.
+- `README.md` "Development": read when re-vendoring the fixture or releasing.

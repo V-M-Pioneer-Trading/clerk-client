@@ -6,14 +6,15 @@
 The TypeScript half of "one verifier". [auth-design decision 21][d21] makes
 auth-service the only component that verifies a token; everyone else asks it
 what the token carries and compares the answer against what their own route
-declared. This package is that client for the three Node services
-(fleet-service, automation-service, st-gateway).
+declared. This package is that client for the four Node services
+(agent-service, fleet-service, automation-service, st-gateway).
 
 Its behaviour is not described here but *fixed* by
 [`fixtures/introspection.json`][fixture] in `meta` — fifty-six conditions for a
 calling service and nineteen for st-gateway's queue lane, each with the center's
 response and the exact status, message, identity and call count expected. It is
-vendored into `test/fixtures/` (version 7), and the conformance suite drives all
+vendored into `test/fixtures/` (`main` carries version 7; the released 2.0.1
+conforms to version 6), and the conformance suite drives all
 seventy-five cases against a real local HTTP stub. The four version-4 cases carry
 two `Authorization` lines, which no header value can express, so they are sent
 as real separate lines through real Express and through the lane recipe below.
@@ -656,7 +657,7 @@ unknown assertion key**, so a case added upstream is a red test rather than one
 quietly skipped.
 
 **Releasing.** Green on `main`, bump `version`, merge, push a matching tag
-(`git tag v1.0.0 && git push origin v1.0.0`). The release workflow refuses a
+(`git tag v<version> && git push origin v<version>`). The release workflow refuses a
 tag that disagrees with `package.json`, then builds, tests, packs and attaches
 the `.tgz` to a GitHub Release; `contents: write` lives on that one job.
 
