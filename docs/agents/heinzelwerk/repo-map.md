@@ -14,7 +14,7 @@
 | `scripts/` | README check |
 
 - CI `ci.yml`: lint, typecheck, build, test, `check:readme`, then tarball proofs in scratch projects. `release.yml`: on `v*` matching `package.json`, `gh release create`.
-- Consumers: agent-service, automation-service, fleet-service, st-gateway (2.0.1), by tarball URL.
+- Consumers: agent-service, automation-service, fleet-service, st-gateway (2.0.1), by tarball URL. ai-service pins the predecessor `introspection-client` 1.2.0.
 
 ## Reference docs
 
