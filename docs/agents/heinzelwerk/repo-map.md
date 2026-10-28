@@ -31,6 +31,11 @@ Facts verified against origin/main 31d2cbc on 2026-10-27, each with `path:line`.
 10. TRAPS
 - Express 4 only; types local, no peer dep (README.md:21-24); Express-internals bypasses (README.md:196-203). Guard trusts req.method; X-HTTP-Method-Override ignored, mount override before guard (express.ts:61-63; README.md:236-239). Mounted before guard = unprotected (README.md:191-192). Two package copies: refuses to start (README.md:228-229).
 - Multiple/uncountable Authorization lines => no credential; use soleAuthorizationLine(req), not req.header (core.ts:224-281; README.md:534-574). Case-variant/duplicate top-level keys => 503 (CHANGELOG.md:29-37); non-2xx => unavailable (CHANGELOG.md:7-13).
-- Undeclared = 500 not 403: automation-service treats 403 as terminal credentials verdict (core.ts:341-344). Shared-secret routes (knobWriteGuard, POST /events) unmigratable until callers hold M2M tokens (README.md:319-333).
+- Undeclared = 500 not 403: automation-service treats 403 as terminal credentials verdict (core.ts:341-344). README.md:319-333 still calls automation-service's shared-secret routes unmigratable; they are migrated (automation-service src/server.ts:463, :529).
 - 2.0.0 rename from introspection-client: change URL + import path (CHANGELOG.md:46-53). Tag must match package.json (release.yml:35-42); Unreleased = tests only (CHANGELOG.md:3-5).
 11. DOCS: README.md (quick start :33, security :77, not-protected :187, migration :241, reference :378, dev :621); CHANGELOG.md; test/fixtures/SOURCE; scripts/check-readme.mjs:1-27; external decision 21 (README.md:6), token-introspection.md (README.md:406-408, 465).
+
+## Reference docs
+
+- `README.md` "Migrating an Express app": read when securing a new service or mount.
+- `README.md` "Behaviour" table: read when changing a guard decision or any status answer.

@@ -332,6 +332,8 @@ leave those two routes on their existing guard and migrate the rest around
 them — a route that swaps a shared secret for a scope before its callers hold
 tokens is a `401` for every caller, not a tightening.
 
+Correction (2026-10-28): both shared-secret routes are migrated: POST /events requires events:write and PUT /planner/knobs/:name requires planner:advise with a machine fenced to policy by `kind`; X-Service-Secret is no longer read, see automation-service/src/server.ts:529.
+
 st-gateway is the one consumer that does **not** secure its app: `/proxy`
 forwards anonymous mutations by design (`POST /register` carries the caller's
 own account token, and auth-service polls `GET /` with no credential), and this
