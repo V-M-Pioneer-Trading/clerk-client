@@ -330,6 +330,8 @@ declare an ordinary scope and add `kindOf(res) === "machine"` inside the
 handler where the secret check used to be. Until both halves have shipped,
 leave those two routes on their existing guard and migrate the rest around
 them — a route that swaps a shared secret for a scope before its callers hold
+
+Correction (2026-10-29): `knobWriteGuard` and `requireServiceSecret()` are gone from automation-service; `X-Service-Secret` is retired and counts as no credential, see ../automation-service/src/server.ts:514.
 tokens is a `401` for every caller, not a tightening.
 
 st-gateway is the one consumer that does **not** secure its app: `/proxy`

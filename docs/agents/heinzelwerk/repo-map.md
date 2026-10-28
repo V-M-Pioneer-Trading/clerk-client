@@ -14,13 +14,13 @@ Verified against origin/main 31d2cbc on 2026-10-28. Facts only, each with its ev
  - ignoreCredentials(): registration refused except get/head/options/use (src/express.ts:605-632); non-safe method reaching it via use() -> 500 (:1076-1081)
  - notFound(): only as sole `use(notFound(h))`, last, status clamped >=400 (src/express.ts:415-459,661-686); arity-4 error handlers need no declaration (:718); passthrough() items may precede declaration (:574-577)
  - Undeclared/resolver-miss -> 500 on every method (src/express.ts:1027-1037); app.del refused (:827-835); app.get("x") one-string = settings getter, not a route (:800)
- - st-gateway does not secure its app; /proxy forwards anonymous mutations by design (README.md:335-343)
+ - st-gateway does not secure its app; /proxy forwards anonymous mutations by design (README.md:337-345)
 4. Money/spend: none. No SpaceTraders or paid-API calls; only fetch calls go to auth-service (src/center.ts:176; src/m2mToken.ts:153,175).
 5. Calls out / called by:
  - POST form `token=...` to AUTH_INTROSPECTION_URL (e.g. /auth/v1/introspect), header X-Introspection-Secret, redirect manual, timeout 1000ms, 64KiB cap (src/center.ts:176-195; src/messages.ts:32,41,44)
  - POST to auth-service m2m-token URL (e.g. /auth/v1/m2m-token), header X-M2M-Caller-Secret, timeout 1000ms (src/m2mToken.ts:22,24,61,175-178)
  - Consumers on 2.0.1 tarball: agent-service (package.json:24), automation-service (:19), fleet-service (:20), st-gateway (:18). ai-service still on old @v-m-pioneer-trading/introspection-client v1.2.0 from old repo URL (../ai-service/package.json:17). README says three (README.md:9-10), stale.
- - Usage: st-gateway createLaneDeriver (../st-gateway/src/server.ts:189); automation-service createCentralM2MTokenSource (../automation-service/src/config.ts:90). Gateway should pass timeoutMs:250 (README.md:345)
+ - Usage: st-gateway createLaneDeriver (../st-gateway/src/server.ts:189); automation-service createCentralM2MTokenSource (../automation-service/src/config.ts:90). Gateway should pass timeoutMs:250 (README.md:347)
  - Vendored fixture: test/fixtures/introspection.json from meta fixtures/introspection.json, v7, commit f226e5f4, 75 cases, sha256 95cb78d8 (test/fixtures/SOURCE:3-10); test/conformance.test.ts:62 checks copy vs SOURCE, :76,:138 sorted case names. Re-vendor steps SOURCE:33-39.
  - Dev dep eslint-config pinned by release tarball URL v1.1.0 (package.json:35)
 6. Build/test/run (package.json:22-29): npm ci; build (tsc -p tsconfig.build.json); typecheck (tsc -p tsconfig.json --noEmit); test (jest, ts-jest preset, node env, jest.config.js:3-4); lint (eslint . --max-warnings 0); check:readme (compiles and RUNS every README snippet, scripts/check-readme.mjs:1-26). No run target. .gitignore: node_modules, dist, coverage, .readme-check, *.tgz, *.log (.gitignore:1-6); no .env.example.
@@ -44,4 +44,12 @@ Verified against origin/main 31d2cbc on 2026-10-28. Facts only, each with its ev
  - Repo/package name (clerk-client) differs from local folder ts-introspection-client; ai-service still pins old name/repo (../ai-service/package.json:17).
  - prepack runs build (package.json:28); files = dist, README, LICENSE only (:18; .github/workflows/ci.yml:57-83).
  - Registry WeakMaps assume one package copy per process (src/express.ts:283-287).
-11. Other docs: README.md (usage, migration, releasing at :658-661), CHANGELOG.md, test/fixtures/SOURCE (vendoring record), LICENSE (MIT).
+ - Duplicate-Authorization check depends on the header limit 2 x maxHeadersCount; at or past it the request is refused. Set server.maxHeadersCount before the first connection opens (src/core.ts:174,236-248; README.md:155-176).
+ - Always give ignoreCredentials()/allowPublic() mounts a path: a pathless mount matches every request and 500s every write routed past it (src/express.ts:905-908; README.md:294-300).
+ - A generated (tsoa) router is guarded at mount by the router-level guard, checked only at runtime: do not secured() it, do not mount it bare (src/express.ts:681,931-932; README.md:302-317).
+ - M2M token source: unknown-caller is always thrown even with a valid cached token; after any failed refresh no new request for 10 s; the only retry is one on timeout (src/m2mToken.ts:28,220-243; README.md:455-464).
+11. Other docs: README.md (usage, migration, releasing at :660-663), CHANGELOG.md, test/fixtures/SOURCE (vendoring record), LICENSE (MIT).
+
+## Reference docs
+
+- README.md: read when changing guard behaviour or a consumer's declarations (Declaration and Behaviour tables, evaluation-ordered rows).
