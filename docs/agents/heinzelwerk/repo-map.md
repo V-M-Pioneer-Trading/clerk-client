@@ -35,15 +35,16 @@ Verified against 31d2cbc 2026-10-29.
 - `ignoreCredentials` only on get/head/options/use(), else startup throw. `src/express.ts:601-632`
 - `secured()` refuses undeclared routes at registration. `src/express.ts:776-835`
 - `loadIntrospectionConfig`: both env vars required and non-blank, http/https, global fetch present, no query string. `src/config.ts:24-81`
-- M2M: secret non-empty without CR/LF; JWT payload read unverified for `iat`/`exp` only; lifetime <= 7 days; refresh at half-life; only 200 accepted, 401 -> unknown-caller; one retry on timeout only; failure spacing 10 s; unexpired cached token served on failure except unknown-caller. `src/m2mToken.ts:138`, `:112-131`, `:31`, `:188-203`, `:224-227`, `:28`, `:235`, `:241-246`
+- M2M: secret non-empty without CR/LF; JWT payload decoded without a signature check, for `iat`/`exp` only; lifetime <= 7 days; refresh at half-life; only 200 accepted, 401 -> unknown-caller; one retry on timeout only; failure spacing 10 s; unexpired cached token served on failure except unknown-caller. `src/m2mToken.ts:138`, `:112-131`, `:31`, `:188-203`, `:224-227`, `:28`, `:235`, `:241-246`
 
 ## Calls / called-by
 - Calls auth-service: `POST AUTH_INTROSPECTION_URL` verbatim with header `X-Introspection-Secret`. `src/center.ts:176-181`, `src/messages.ts:32-38`, `README.md:507`
 - Calls auth-service M2M endpoint with `X-M2M-Caller-Secret`. `src/m2mToken.ts:22`, `src/m2mToken.ts:175-177`, `README.md:422`
 - Called by (pin v2.0.1 release URL): `../agent-service/package.json:24`, `../automation-service/package.json:19`, `../fleet-service/package.json:20`, `../st-gateway/package.json:18`; lockfile pins sha512, e.g. `../fleet-service/package-lock.json:2602-2605`
 - Entry points in consumers: `../agent-service/src/server.ts:211`, `../fleet-service/src/server.ts:151` (`createExpressAuth`), `../st-gateway/src/server.ts:189` (`createLaneDeriver`), `../automation-service/src/config.ts:90` (M2M)
-- auth-service is not a consumer; it is the verifier. `../auth-service/CLAUDE.md:77-78`
-- Stale: ai-service pins the old `@v-m-pioneer-trading/introspection-client` v1.2.0 from the pre-rename repo URL and uses `createCentralM2MTokenSource`. `../ai-service/package.json:17`, `../ai-service/src/server.ts:2`, `../ai-service/src/server.ts:95`. Old URL still resolving after the rename: (unverified)
+- auth-service is not a consumer; it is the verifier. `../auth-service/CLAUDE.md:79-80`
+- Stale: ai-service pins the old `@v-m-pioneer-trading/introspection-client` v1.2.0 from the pre-rename repo URL and uses `createCentralM2MTokenSource`. `../ai-service/package.json:17`, `../ai-service/src/server.ts:2`, `../ai-service/src/server.ts:95`
+- The old release URL (ai-service's pin) still resolves after the rename. (verified 2026-10-29 @ 31d2cbc: `curl -sIL https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.2.0/v-m-pioneer-trading-introspection-client-1.2.0.tgz` → 200)
 - Design docs live in meta: `../meta/docs/design/auth-design.md`, `../meta/docs/design/token-introspection.md`. `src/center.ts:10`, `src/center.ts:159`, `src/center.ts:192`
 
 ## Vendored fixture
@@ -76,7 +77,8 @@ Verified against 31d2cbc 2026-10-29.
 - Steps: tag == `package.json` version, `npm ci`, typecheck, build, test, pack, then `gh release create ... --generate-notes`. `.github/workflows/release.yml:35-74`
 - No lint, check:readme or tarball probes in release. `.github/workflows/release.yml:44-59`
 - Process: green main, bump version, merge, push a matching tag. `README.md:662-665`
-- Consumer bump is a manual URL + lockfile edit in each consumer. Pin lines: `../agent-service/package.json:24`, `../fleet-service/package.json:20`, `../automation-service/package.json:19`, `../st-gateway/package.json:18` (lockfile half: unverified)
+- Consumer bump is a manual URL + lockfile edit in each consumer. Pin lines: `../agent-service/package.json:24`, `../fleet-service/package.json:20`, `../automation-service/package.json:19`, `../st-gateway/package.json:18`
+- Each consumer lockfile records the v2.0.1 `resolved` URL and a sha512 `integrity`: `../agent-service/package-lock.json:3310-3313`, `../fleet-service/package-lock.json:2602-2605`, `../st-gateway/package-lock.json:1982-1985`, `../automation-service/package-lock.json:2008-2011`
 
 ## Traps
 - Green `npm test` is not green CI: the tarball-only steps run only in CI. `.github/workflows/ci.yml:57-667`

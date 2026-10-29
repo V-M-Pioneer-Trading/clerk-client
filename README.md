@@ -9,7 +9,7 @@ what the token carries and compares the answer against what their own route
 declared. This package is that client for the three Node services
 (fleet-service, automation-service, st-gateway).
 
-Correction (2026-10-29): four Node services consume it: agent-service, fleet-service, automation-service, st-gateway, see agent-service/package.json:24, agent-service/src/server.ts:211.
+Correction (2026-10-29): four Node services consume it: agent-service, fleet-service, automation-service, st-gateway, see V-M-Pioneer-Trading/agent-service package.json:24, V-M-Pioneer-Trading/agent-service src/server.ts:211.
 
 Its behaviour is not described here but *fixed* by
 [`fixtures/introspection.json`][fixture] in `meta` — fifty-six conditions for a
@@ -334,7 +334,7 @@ leave those two routes on their existing guard and migrate the rest around
 them — a route that swaps a shared secret for a scope before its callers hold
 tokens is a `401` for every caller, not a tightening.
 
-Correction (2026-10-29): the migration is done; automation-service has no `knobWriteGuard` or `requireServiceSecret()`, its routes are secured and fence machines by `kindOf`, see automation-service/src/server.ts:6-12, automation-service/src/server.ts:254, automation-service/src/server.ts:504-505.
+Correction (2026-10-29): the migration is done; automation-service has no `knobWriteGuard` or `requireServiceSecret()`, its app and its API router are secured and the knob write fences machines by `kindOf`, see V-M-Pioneer-Trading/automation-service src/server.ts:261,374,529.
 
 st-gateway is the one consumer that does **not** secure its app: `/proxy`
 forwards anonymous mutations by design (`POST /register` carries the caller's
