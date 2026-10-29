@@ -86,6 +86,6 @@ Verified against 31d2cbc 2026-10-29.
 - CHANGELOG "Unreleased" is tests only: no code change, no release. `CHANGELOG.md:3-5`
 
 ## Reference docs
-- `README.md#Behaviour` (:467-485): read when changing rule order or the answer or center call for any request case in `src/core.ts:336-358`.
-- `README.md#Minting a machine token` (`M2MTokenError` kinds table, :451-455): read when handling `M2MTokenError` in a consumer or changing `src/m2mToken.ts` failure or caching behaviour.
+- `README.md#Behaviour` (:471-489): read when changing rule order or the answer or center call for any request case in `src/core.ts:336-358`.
+- `README.md#Minting a machine token` (`M2MTokenError` kinds table, :455-459): read when handling `M2MTokenError` in a consumer or changing `src/m2mToken.ts` failure or caching behaviour.
 - `./README.md:243-294` ("Migrating an Express app"): read when putting a new Express app behind `secured()` or `guard()`.
