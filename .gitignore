@@ -4,4 +4,10 @@ coverage/
 .readme-check/
 *.tgz
 *.log
+
+# CI pack check output
+packed.txt
 .DS_Store
+
+# heinzelwerk task worktrees
+.claude/worktrees/

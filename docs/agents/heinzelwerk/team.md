@@ -1,0 +1,45 @@
+# Team rules
+
+How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) live in the `heinzelwerk:team-modes` skill. This file holds only what is specific to this repo.
+
+- **Autonomy**: full. Agents merge and apply on their own; breakages are learnings. Secrets are never published (name the variable, never the value); the gate never merges its own policy.
+- **Role**: shared library, security-critical: credential decisions for 4 services (the consumers listed under Contracts, `docs/agents/heinzelwerk/team.md:36-39`). GitHub repo V-M-Pioneer-Trading/clerk-client; the local folder `ts-introspection-client` keeps the old name.
+- **Shared paths** (only the owner named in the task edits them): whole repo; consumers listed under Contracts.
+- **Worktree setup** (run once in every new task worktree): `npm ci`
+- **Checks** (validator runs every one, in order; copied from CI, quiet flags only):
+  - `npm run lint`
+  - `npm run typecheck`
+  - `npm run build`
+  - `npm test`
+  - `npm run check:readme`
+  - `.github/workflows/ci.yml` steps "Pack and check the tarball's contents" (:57) through "Prove a duplicated key is a malformed answer, from the tarball" (:576), in order, each copied to a temp script and run as written (heredocs inside)
+  - `npm audit --audit-level=high (red on main: V-M-Pioneer-Trading/meta#136; not in CI)`
+- **Verified against**: 31d2cbc 2026-10-29 (checks and every ref in this file; retro bumps it)
+- **Coding standards**: lint `base` from the shared eslint-config release (`eslint.config.mjs:1`, `package.json:35`); `npm run lint` is `eslint . --max-warnings 0` (`package.json:26`).
+- **Risk areas** (validator reviews diffs touching these on Opus). Each entry is a path/glob or a described kind of change, plus why it is risky:
+  - `src/**`: the whole tree decides whether a credential is accepted; a loosened check is an auth bypass in 4 services.
+  - `src/core.ts:340-357`: rule order. Non-safe method with `requires: "none"` is a 500 before any header read or center call; no token with `"none"` is a visitor, otherwise 401.
+  - `src/core.ts:99-115` (`bearerFrom`) and `src/core.ts:193-216`, `:278-281` (Authorization counted in `rawHeaders`): more than one line, or an unknowable count, is no credential.
+  - `src/center.ts:161-203`: introspection call. POST, token in form body, `redirect: "manual"` (:188), no cache, no retry; non-2xx is unavailable before the body is read.
+  - `src/center.ts:72-108`, `src/strictJson.ts`: strict JSON, duplicate keys at any depth and mis-cased contract keys are malformed; `active` strictly boolean.
+  - `src/m2mToken.ts`: M2M token source; secret rules (:138), JWT lifetime cap 7 days (:31, :125), cached-token fallback on failure.
+  - `src/express.ts:601-632`, `:776-835`: `ignoreCredentials` allowed only on get/head/options; `secured()` refuses undeclared routes at registration.
+  - `src/gateway.ts:36`: st-gateway lane policy; `derive` must never throw and returns "interactive" only for an active operator.
+  - `src/messages.ts`, error paths in `src/center.ts`: secrets and URLs must stay out of messages and logs; nothing logs.
+  - `test/fixtures/introspection.json`, `test/fixtures/SOURCE`, `test/conformance.test.ts:61-72`: vendored fixture pinned in two places; both must move together (see Contracts).
+  - `.github/workflows/release.yml`: `v*` tag push releases (:10); `contents: write` only on the job `release` (:22); no lint, check:readme or tarball probes run in it.
+  - `package.json` `version`: the tag must equal it (`.github/workflows/release.yml:35-42`).
+  - `README.md` snippets: compiled and run by `scripts/check-readme.mjs`; an edit can break CI (`package.json:27`).
+  - `.github/workflows/ci.yml:57-667`: tarball-only proofs; green `npm test` is not green CI. The `require()` export list is hardcoded, so a new export needs adding (:96-98).
+- **Contracts** (see team-modes **Contract changes**; validator checks every diff touching these):
+  - Provided: the public API re-exported in `src/index.ts:17-76`: `createAuthorizer`, `createIntrospector`, `createExpressAuth`, `createLaneDeriver`, `loadIntrospectionConfig`, `createCentralM2MTokenSource`, `MESSAGES` and the rest · consumers and pins (release URL v2.0.1 in package.json, sha512 in the lockfile, e.g. `../fleet-service/package-lock.json:2602-2605`):
+    - `../agent-service/package.json:24` (`createExpressAuth`, `../agent-service/src/server.ts:211`)
+    - `../fleet-service/package.json:20` (`createExpressAuth`, `../fleet-service/src/server.ts:151`)
+    - `../st-gateway/package.json:18` (`createLaneDeriver`, `../st-gateway/src/server.ts:189`)
+    - `../automation-service/package.json:19` (`createCentralM2MTokenSource`, `../automation-service/src/config.ts:90`; also `createExpressAuth` + `secured`, `../automation-service/src/server.ts:261,374,739`)
+  - A release needs a bump PR in every consumer: new release URL in `package.json` plus the lockfile, edited by hand.
+  - Stale, out of scope: `../ai-service/package.json:17` pins the old `@v-m-pioneer-trading/introspection-client` v1.2.0.
+  - Not a consumer: auth-service (`../auth-service/CLAUDE.md:79-80`); it is the verifier.
+  - Consumed: `POST` to `AUTH_INTROSPECTION_URL` with header `X-Introspection-Secret` (`src/center.ts:176-181`, `src/messages.ts:32-38`) and the M2M token endpoint with `X-M2M-Caller-Secret` (`src/m2mToken.ts:22`, `:175-177`) · provider auth-service; design in `../meta/docs/design/auth-design.md`, `../meta/docs/design/token-introspection.md` (`src/center.ts:10`, `:159`).
+  - Vendored: `test/fixtures/introspection.json`, copy of meta `../meta/fixtures/introspection.json`, pinned in `test/fixtures/SOURCE:3-10` (meta commit, blob, version 7, bytes, sha256) and in the sha256 literal at `test/conformance.test.ts:61-72`; the version assertion is at `:162` · provider meta; a meta change means a re-vendor here, commands at `test/fixtures/SOURCE:33-39`. Move SOURCE, the literal and the version test together; change meta first.
+  - Consumed lint config: eslint-config release v1.1.0 (`package.json:35`) · provider eslint-config.
