@@ -5,7 +5,7 @@ How to consume this repo's domain documentation when exploring the codebase.
 ## Before exploring, read these
 
 - **`../meta/GLOSSARY-MAP.md`** (sibling path `../meta/GLOSSARY-MAP.md` from the workspace): every repo's glossary and how the contexts relate; then `../meta/GLOSSARY.md` for workspace vocabulary. This repo has no `GLOSSARY.md`.
-- **docs/adr/**: ADRs that touch the area you're about to work in (none in this repo).
+- **docs/adr/**: ADRs that touch the area you're about to work in (`docs/adr/0001-route-matching-stays-express.md`).
 - Workspace: each repo is one context; the tickets repo holds `GLOSSARY-MAP.md` (every repo's glossary and how the contexts relate) and workspace-wide ADRs.
 
 ## ADRs elsewhere

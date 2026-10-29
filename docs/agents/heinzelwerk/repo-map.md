@@ -4,7 +4,7 @@ Verified against 31d2cbc 2026-10-29.
 ## Purpose
 - TS client for auth-service introspection: default-deny guards, Express 4 adapter, st-gateway lane policy. Version 2.0.1. `package.json:2-4`, `src/index.ts:3-15`
 - Local folder is `ts-introspection-client`; GitHub repo and package name are `clerk-client`. `package.json:2`
-- No registry: consumers install the GitHub Release tarball by URL. `README.md:25`
+- No registry: consumers install the GitHub Release tarball by URL. `README.md:27`
 
 ## Layout (`src/`)
 - `src/index.ts`: public surface, re-exports everything below. `src/index.ts:17-76`
@@ -38,8 +38,8 @@ Verified against 31d2cbc 2026-10-29.
 - M2M: secret non-empty without CR/LF; JWT payload read unverified for `iat`/`exp` only; lifetime <= 7 days; refresh at half-life; only 200 accepted, 401 -> unknown-caller; one retry on timeout only; failure spacing 10 s; unexpired cached token served on failure except unknown-caller. `src/m2mToken.ts:138`, `:112-131`, `:31`, `:188-203`, `:224-227`, `:28`, `:235`, `:241-246`
 
 ## Calls / called-by
-- Calls auth-service: `POST AUTH_INTROSPECTION_URL` verbatim with header `X-Introspection-Secret`. `src/center.ts:176-181`, `src/messages.ts:32-38`, `README.md:503`
-- Calls auth-service M2M endpoint with `X-M2M-Caller-Secret`. `src/m2mToken.ts:22`, `src/m2mToken.ts:175-177`, `README.md:418`
+- Calls auth-service: `POST AUTH_INTROSPECTION_URL` verbatim with header `X-Introspection-Secret`. `src/center.ts:176-181`, `src/messages.ts:32-38`, `README.md:507`
+- Calls auth-service M2M endpoint with `X-M2M-Caller-Secret`. `src/m2mToken.ts:22`, `src/m2mToken.ts:175-177`, `README.md:422`
 - Called by (pin v2.0.1 release URL): `../agent-service/package.json:24`, `../automation-service/package.json:19`, `../fleet-service/package.json:20`, `../st-gateway/package.json:18`; lockfile pins sha512, e.g. `../fleet-service/package-lock.json:2602-2605`
 - Entry points in consumers: `../agent-service/src/server.ts:211`, `../fleet-service/src/server.ts:151` (`createExpressAuth`), `../st-gateway/src/server.ts:189` (`createLaneDeriver`), `../automation-service/src/config.ts:90` (M2M)
 - auth-service is not a consumer; it is the verifier. `../auth-service/CLAUDE.md:77-78`
@@ -57,7 +57,7 @@ Verified against 31d2cbc 2026-10-29.
 
 ## Build / test
 - Scripts: build (`tsc -p tsconfig.build.json`), typecheck, test (jest), lint (`--max-warnings 0`), check:readme, prepack = build. `package.json:22-29`
-- Local one-liner. `README.md:621-625`
+- Local one-liner. `README.md:625-629`
 - Lint `base` comes from the eslint-config v1.1.0 tarball. `eslint.config.mjs:1-7`, `package.json:35`
 - Jest: ts-jest, `detectOpenHandles`. `jest.config.js:3-11`
 - CommonJS, node resolution, no `exports` map; node >= 18. `tsconfig.json:5-8`, `package.json:19-21`
@@ -75,7 +75,7 @@ Verified against 31d2cbc 2026-10-29.
 - Trigger: tag push `v*`; job `release` holds `contents: write`. `.github/workflows/release.yml:8-10`, `.github/workflows/release.yml:21-22`
 - Steps: tag == `package.json` version, `npm ci`, typecheck, build, test, pack, then `gh release create ... --generate-notes`. `.github/workflows/release.yml:35-74`
 - No lint, check:readme or tarball probes in release. `.github/workflows/release.yml:44-59`
-- Process: green main, bump version, merge, push a matching tag. `README.md:658-661`
+- Process: green main, bump version, merge, push a matching tag. `README.md:662-665`
 - Consumer bump is a manual URL + lockfile edit in each consumer. Pin lines: `../agent-service/package.json:24`, `../fleet-service/package.json:20`, `../automation-service/package.json:19`, `../st-gateway/package.json:18` (lockfile half: unverified)
 
 ## Traps
@@ -84,3 +84,8 @@ Verified against 31d2cbc 2026-10-29.
 - README snippets are compiled and run via `scripts/readme-prelude.ts`; `.readme-check/` is gitignored and lint-ignored. `scripts/check-readme.mjs:1-27`, `.gitignore:4`, `eslint.config.mjs:7`
 - BOM or invalid UTF-8 is read leniently here, unlike the Go and Java clients. `src/center.ts:205-210`
 - CHANGELOG "Unreleased" is tests only: no code change, no release. `CHANGELOG.md:3-5`
+
+## Reference docs
+- `README.md#Behaviour` (:467-485): read when changing rule order or the answer or center call for any request case in `src/core.ts:336-358`.
+- `README.md#Minting a machine token` (`M2MTokenError` kinds table, :451-455): read when handling `M2MTokenError` in a consumer or changing `src/m2mToken.ts` failure or caching behaviour.
+- `./README.md:243-294` ("Migrating an Express app"): read when putting a new Express app behind `secured()` or `guard()`.

@@ -9,6 +9,8 @@ what the token carries and compares the answer against what their own route
 declared. This package is that client for the three Node services
 (fleet-service, automation-service, st-gateway).
 
+Correction (2026-10-29): four Node services consume it: agent-service, fleet-service, automation-service, st-gateway, see agent-service/package.json:24, agent-service/src/server.ts:211.
+
 Its behaviour is not described here but *fixed* by
 [`fixtures/introspection.json`][fixture] in `meta` — fifty-six conditions for a
 calling service and nineteen for st-gateway's queue lane, each with the center's
@@ -331,6 +333,8 @@ handler where the secret check used to be. Until both halves have shipped,
 leave those two routes on their existing guard and migrate the rest around
 them — a route that swaps a shared secret for a scope before its callers hold
 tokens is a `401` for every caller, not a tightening.
+
+Correction (2026-10-29): the migration is done; automation-service has no `knobWriteGuard` or `requireServiceSecret()`, its routes are secured and fence machines by `kindOf`, see automation-service/src/server.ts:6-12, automation-service/src/server.ts:254, automation-service/src/server.ts:504-505.
 
 st-gateway is the one consumer that does **not** secure its app: `/proxy`
 forwards anonymous mutations by design (`POST /register` carries the caller's

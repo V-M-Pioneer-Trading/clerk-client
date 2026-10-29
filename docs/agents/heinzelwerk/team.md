@@ -36,7 +36,7 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
     - `../agent-service/package.json:24` (`createExpressAuth`, `../agent-service/src/server.ts:211`)
     - `../fleet-service/package.json:20` (`createExpressAuth`, `../fleet-service/src/server.ts:151`)
     - `../st-gateway/package.json:18` (`createLaneDeriver`, `../st-gateway/src/server.ts:189`)
-    - `../automation-service/package.json:19` (`createCentralM2MTokenSource`, `../automation-service/src/config.ts:90`)
+    - `../automation-service/package.json:19` (`createCentralM2MTokenSource`, `../automation-service/src/config.ts:90`; also `createExpressAuth` + `secured`, `../automation-service/src/server.ts:6-12`, `:254`)
   - A release needs a bump PR in every consumer: new release URL in `package.json` plus the lockfile, edited by hand.
   - Stale, out of scope: `../ai-service/package.json:17` pins the old `@v-m-pioneer-trading/introspection-client` v1.2.0.
   - Not a consumer: auth-service (`../auth-service/CLAUDE.md:77-78`); it is the verifier.
