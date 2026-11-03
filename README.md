@@ -240,7 +240,7 @@ A fence whose gaps are unknown is worse than no fence.
 
 ## Migrating an Express app
 
-Every construct the three services contain, in the spelling this package
+Every construct the services contain, in the spelling this package
 accepts.
 
 ```ts
