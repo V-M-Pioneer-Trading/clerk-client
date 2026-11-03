@@ -6,7 +6,7 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
 - **Role**: shared library, security-critical: credential decisions for 4 services (the consumers listed under Contracts, `docs/agents/heinzelwerk/team.md:36-39`). GitHub repo V-M-Pioneer-Trading/clerk-client; the local folder `ts-introspection-client` keeps the old name.
 - **Shared paths** (only the owner named in the task edits them): whole repo; consumers listed under Contracts.
 - **Worktree setup** (run once in every new task worktree): `npm ci`
-- **Checks** (validator runs every one, in order; copied from CI, quiet flags only):
+- **Checks** (validator runs every one, in order; copied from CI, quiet flags only; a status note goes after the closing backtick, never inside the span, which must run as pasted):
   - `npm run lint`
   - `npm run typecheck`
   - `npm run build`
