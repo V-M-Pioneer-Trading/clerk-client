@@ -6,10 +6,8 @@
 The TypeScript half of "one verifier". [auth-design decision 21][d21] makes
 auth-service the only component that verifies a token; everyone else asks it
 what the token carries and compares the answer against what their own route
-declared. This package is that client for the three Node services
-(fleet-service, automation-service, st-gateway).
-
-Correction (2026-10-29): four Node services consume it: agent-service, fleet-service, automation-service, st-gateway, see V-M-Pioneer-Trading/agent-service package.json:24, V-M-Pioneer-Trading/agent-service src/server.ts:211.
+declared. This package is that client for the four Node services
+(agent-service, fleet-service, automation-service, st-gateway).
 
 Its behaviour is not described here but *fixed* by
 [`fixtures/introspection.json`][fixture] in `meta` — fifty-six conditions for a
@@ -242,7 +240,7 @@ A fence whose gaps are unknown is worse than no fence.
 
 ## Migrating an Express app
 
-Every construct the three services contain, in the spelling this package
+Every construct the services contain, in the spelling this package
 accepts.
 
 ```ts
@@ -320,8 +318,8 @@ ahead of it is refused, which is the boot failure that found this.
 
 ### A gap the migration cannot close: the shared-secret callers
 
-automation-service's `knobWriteGuard` picks its requirement from the
-`X-Service-Secret` header, and `POST /events` uses `requireServiceSecret()`;
+automation-service's `knobWriteGuard` picked its requirement from the
+`X-Service-Secret` header, and `POST /events` used `requireServiceSecret()`;
 this package has no shared-secret primitive and will not get one, because
 [decision 21][d21] says a machine caller presents a Clerk M2M token like every
 other caller and is fenced on what the center says about it. So this is a
@@ -329,12 +327,11 @@ other caller and is fenced on what the center says about it. So this is a
 callers of those routes must be issued M2M tokens and start sending
 `Authorization: Bearer …` before the routes are migrated, and the routes then
 declare an ordinary scope and add `kindOf(res) === "machine"` inside the
-handler where the secret check used to be. Until both halves have shipped,
-leave those two routes on their existing guard and migrate the rest around
-them — a route that swaps a shared secret for a scope before its callers hold
-tokens is a `401` for every caller, not a tightening.
-
-Correction (2026-10-29): the migration is done; automation-service has no `knobWriteGuard` or `requireServiceSecret()`, its app and its API router are secured and the knob write fences machines by `kindOf`, see V-M-Pioneer-Trading/automation-service src/server.ts:261,374,529.
+handler where the secret check used to be. Both routes have migrated: they
+declare a scope on automation-service's secured router, and the knob write
+fences machines on `kindOf(res)`. A route that swaps a shared secret for a
+scope before its callers hold tokens is a `401` for every caller, not a
+tightening.
 
 st-gateway is the one consumer that does **not** secure its app: `/proxy`
 forwards anonymous mutations by design (`POST /register` carries the caller's
