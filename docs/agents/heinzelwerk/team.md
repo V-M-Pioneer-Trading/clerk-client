@@ -12,7 +12,7 @@ How heinzelwerk agents work in this repo. Mode rules (single repo vs workspace) 
   - `npm run build`
   - `npm test`
   - `npm run check:readme`
-  - `.github/workflows/ci.yml` steps "Pack and check the tarball's contents" (:57) through "Prove a duplicated key is a malformed answer, from the tarball" (:576), in order, each copied to a temp script and run as written (heredocs inside)
+  - `rm -f ./*.tgz`, then `.github/workflows/ci.yml` steps "Pack and check the tarball's contents" (:57) through "Prove a duplicated key is a malformed answer, from the tarball" (:576), in order, each copied to a temp script and run as written (heredocs inside)
   - `npm audit --audit-level=high` (red on main: V-M-Pioneer-Trading/meta#136; not in CI)
 - **Verified against**: 31d2cbc 2026-10-29 (checks and every ref in this file; retro bumps it)
 - **Coding standards**: lint `base` from the shared eslint-config release (`eslint.config.mjs:1`, `package.json:35`); `npm run lint` is `eslint . --max-warnings 0` (`package.json:26`).
